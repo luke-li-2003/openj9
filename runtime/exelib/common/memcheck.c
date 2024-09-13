@@ -709,7 +709,8 @@ static BOOLEAN memoryCheck_parseOption(OMRPortLibrary *portLib, char const *opti
 }
 
 
-static void OMRNORETURN memoryCheck_abort(OMRPortLibrary *portLib)
+static void /*OMRNORETURN*/
+memoryCheck_abort(OMRPortLibrary *portLib)
 {
 
 	if ( mode & J9_MCMODE_MPROTECT ) {
@@ -730,7 +731,7 @@ static void OMRNORETURN memoryCheck_abort(OMRPortLibrary *portLib)
 	memCheckPortLib->tty_printf( memCheckPortLib, "Memory error(s) discovered, calling exit(3)\n");
 	memCheckPortLib->exit_shutdown_and_exit(memCheckPortLib, 3);
 
-/*dontreturn: goto dontreturn; avoid warnings */
+/*dontreturn: goto dontreturn;*/
 }
 
 
