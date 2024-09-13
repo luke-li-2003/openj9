@@ -1232,7 +1232,10 @@ obj:
 						} else {
 							rc = THROW_ARRAY_STORE;
 						}
-					} else if (J9_IS_J9CLASS_FLATTENED(srcClazz) || J9_IS_J9CLASS_FLATTENED(destClazz) || J9_IS_J9CLASS_PRIMITIVE_VALUETYPE(destComponentClass)) {
+					} else if (J9_IS_J9CLASS_FLATTENED(srcClazz)
+						|| J9_IS_J9CLASS_FLATTENED(destClazz)
+						|| J9_IS_J9CLASS_ALLOW_DEFAULT_VALUE(destComponentClass)
+					) {
 						/* VM_ArrayCopyHelpers::referenceArrayCopy cannot handle flattened arrays or null elements being copied into arrays of primitive value types, so for those cases use copyFlattenableArray instead */
 						updateVMStruct(REGISTER_ARGS);
 						I_32 value = VM_ValueTypeHelpers::copyFlattenableArray(_currentThread, _objectAccessBarrier, _objectAllocate, srcObject, destObject, srcStart, destStart, elementCount);
@@ -2925,8 +2928,7 @@ done:
 	inlClassIsIdentity(REGISTER_ARGS_LIST)
 	{
 		J9Class *receiverClazz = J9VM_J9CLASS_FROM_HEAPCLASS(_currentThread, *(j9object_t*)_sp);
-		bool isValue = J9ROMCLASS_IS_VALUE(receiverClazz->romClass);
-		returnSingleFromINL(REGISTER_ARGS, (isValue ? 0 : 1), 1);
+		returnSingleFromINL(REGISTER_ARGS, J9_IS_J9CLASS_IDENTITY(receiverClazz), 1);
 		return EXECUTE_BYTECODE;
 	}
 

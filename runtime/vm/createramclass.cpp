@@ -1990,7 +1990,7 @@ loadFlattenableFieldValueClasses(J9VMThread *currentThread, J9ClassLoader *class
 								J9NLS_VM_NULLRESTRICTED_MUST_BE_IN_DEFAULT_IMPLICITCREATION_VALUE_CLASS);
 						}
 
-						if (!J9_IS_NULL_RESTRICTED_FIELD_FLATTENED(valueClass, field)) {
+						if (!J9_IS_FIELD_FLATTENED(valueClass, field)) {
 							*valueTypeFlags |= (J9ClassContainsUnflattenedFlattenables | J9ClassHasReferences);
 							eligibleForFastSubstitutability = false;
 						} else if (J9_ARE_NO_BITS_SET(valueClass->classFlags, J9ClassCanSupportFastSubstitutability)) {
@@ -2313,7 +2313,7 @@ nativeOOM:
 			classFlags |= J9ClassIsValueType;
 #if defined(J9VM_OPT_VALHALLA_VALUE_TYPES)
 			/* superclass can be NULL if primitive classes are changed to value typess in the future. */
-			if ((NULL != superclass) && J9_ARE_ALL_BITS_SET(superclass->classFlags, J9ClassHasIdentity)) {
+			if ((NULL != superclass) && J9_IS_J9CLASS_IDENTITY(superclass)) {
 				J9UTF8 *superclassName = J9ROMCLASS_SUPERCLASSNAME(romClass);
 				if (!J9UTF8_LITERAL_EQUALS(J9UTF8_DATA(superclassName), J9UTF8_LENGTH(superclassName), "java/lang/Object")) {
 					J9UTF8* className = J9ROMCLASS_CLASSNAME(romClass);
@@ -2345,7 +2345,8 @@ nativeOOM:
 			}
 #endif /* defined(J9VM_OPT_VALHALLA_FLATTENABLE_VALUE_TYPES) */
 #endif /* defined(J9VM_OPT_VALHALLA_VALUE_TYPES) */
-		} else {
+		} else if (!(J9_IS_CLASSFILE_OR_ROMCLASS_VALUETYPE_VERSION(romClass) && J9ROMCLASS_IS_INTERFACE(romClass))) {
+			/* All classes before value type version are identity. */
 			classFlags |= J9ClassHasIdentity;
 		}
 #if defined(J9VM_OPT_VALHALLA_FLATTENABLE_VALUE_TYPES)
@@ -2403,18 +2404,14 @@ nativeOOM:
 			if (J9ROMCLASS_IS_ARRAY(romClass)) {
 #if defined(J9VM_OPT_VALHALLA_FLATTENABLE_VALUE_TYPES)
 				if (J9_ARE_ALL_BITS_SET(options, J9_FINDCLASS_FLAG_CLASS_OPTION_NULL_RESTRICTED_ARRAY)) {
+					((J9ArrayClass *)state->ramClass)->companionArray = elementClass->arrayClass;
 					elementClass->nullRestrictedArrayClass = state->ramClass;
+					((J9ArrayClass *)elementClass->arrayClass)->companionArray = elementClass->nullRestrictedArrayClass;
 				} else
 #endif /* defined(J9VM_OPT_VALHALLA_FLATTENABLE_VALUE_TYPES) */
 				{
 					((J9ArrayClass *)elementClass)->arrayClass = state->ramClass;
 				}
-#if defined(J9VM_OPT_VALHALLA_FLATTENABLE_VALUE_TYPES)
-				if ((NULL != elementClass->nullRestrictedArrayClass) && (NULL != elementClass->arrayClass)) {
-					((J9ArrayClass *)elementClass->arrayClass)->companionArray = elementClass->nullRestrictedArrayClass;
-					((J9ArrayClass *)elementClass->nullRestrictedArrayClass)->companionArray = elementClass->arrayClass;
-				}
-#endif /* defined(J9VM_OPT_VALHALLA_FLATTENABLE_VALUE_TYPES) */
 				/* Assigning into the arrayClass field creates an implicit reference to the class from its class loader */
 				javaVM->memoryManagerFunctions->j9gc_objaccess_postStoreClassToClassLoader(vmThread, classLoader, state->ramClass);
 			}
