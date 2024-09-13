@@ -730,7 +730,8 @@ static void OMRNORETURN memoryCheck_abort(OMRPortLibrary *portLib)
 	memCheckPortLib->tty_printf( memCheckPortLib, "Memory error(s) discovered, calling exit(3)\n");
 	memCheckPortLib->exit_shutdown_and_exit(memCheckPortLib, 3);
 
-dontreturn: goto dontreturn; /* avoid warnings */
+for (;;)
+/*dontreturn: goto dontreturn;  avoid warnings */
 }
 
 
