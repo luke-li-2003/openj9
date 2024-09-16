@@ -731,7 +731,7 @@ memoryCheck_abort(OMRPortLibrary *portLib)
 	memCheckPortLib->tty_printf( memCheckPortLib, "Memory error(s) discovered, calling exit(3)\n");
 	memCheckPortLib->exit_shutdown_and_exit(memCheckPortLib, 3);
 
-/*dontreturn: goto dontreturn;*/
+dontreturn: goto dontreturn;
 }
 
 
