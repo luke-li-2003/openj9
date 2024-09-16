@@ -255,7 +255,7 @@ static void memoryCheck_fill_bytes(OMRPortLibrary *portLib, U_8 *fillAddress, UD
 static void memoryCheck_update_callSites_free (J9MEMAVLTreeNode *node, UDATA byteAmount);
 static void memoryCheck_null_mem_free_memory(OMRPortLibrary *portLib, void *memoryPointer);
 static BOOLEAN memoryCheck_describe_freed_block(OMRPortLibrary *portLib, char const *operationName, J9MemoryCheckHeader *blockHeader);
-static void OMRNORETURN memoryCheck_abort(OMRPortLibrary *portLib);
+static void /*OMRNORETURN*/ memoryCheck_abort(OMRPortLibrary *portLib);
 static UDATA memoryCheck_filter_nonVM_unFreed_Blcoks(OMRPortLibrary *portLib);
 static void memoryCheck_print_summary(OMRPortLibrary *portLib, I_32 shutdownMode);
 static void memoryCheck_shutdown_internal(OMRPortLibrary *portLib, I_32 shutdownMode);
@@ -731,7 +731,7 @@ memoryCheck_abort(OMRPortLibrary *portLib)
 	memCheckPortLib->tty_printf( memCheckPortLib, "Memory error(s) discovered, calling exit(3)\n");
 	memCheckPortLib->exit_shutdown_and_exit(memCheckPortLib, 3);
 
-dontreturn: goto dontreturn;
+/* dontreturn: goto dontreturn; */
 }
 
 
