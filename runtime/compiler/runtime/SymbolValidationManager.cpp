@@ -721,6 +721,7 @@ TR::SymbolValidationManager::addMultipleArrayRecords(TR_OpaqueClassBlock *compon
 bool
 TR::SymbolValidationManager::addMethodRecord(TR::MethodValidationRecord *record)
    {
+   printf("Try adding method record %p\n", record->_method);
    if (shouldNotDefineSymbol(record->_method)
        || !isClassWorthRemembering(_fej9->getClassOfMethod(record->_method)))
       {
