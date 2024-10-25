@@ -737,6 +737,7 @@ TR::SymbolValidationManager::addMethodRecord(TR::MethodValidationRecord *record)
    if (!getClassChainInfo(record->definingClass(_fej9), record, chainInfo))
       return false;
 
+   printf("Adding method record %p\n", record->_method);
    appendNewRecord(record->_method, record);
    appendClassChainInfoRecords(record->definingClass(), chainInfo);
    return true;

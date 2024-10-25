@@ -9043,6 +9043,7 @@ TR_J9SharedCacheVM::getClassFromSignature(const char * sig, int32_t sigLength, T
       if (comp->getOption(TR_UseSymbolValidationManager))
          {
          TR::SymbolValidationManager *svm = comp->getSymbolValidationManager();
+         printf("svm validation %p %d\n", method, svm->isAlreadyValidated(method));
          SVM_ASSERT_ALREADY_VALIDATED(svm, method);
          validated = svm->addClassByNameRecord(j9class, getClassFromMethodBlock(method));
          }
