@@ -844,7 +844,7 @@ J9::SymbolReferenceTable::findOrFabricateShadowSymbol(
       auto *firstMethod =
          static_cast<TR_OpaqueMethodBlock*>(fej9->getMethods(containingClass));
 
-      printf("getting class from signature %p %p %s %d", firstMethod, fej9, signature,
+      printf("getting class from signature %p %p %s %d\n", firstMethod, fej9, signature,
          fej9->canUseSymbolValidationManager());
       TR_OpaqueClassBlock *declaredClass = fej9->getClassFromSignature(
          signature, (int32_t)strlen(signature), firstMethod);
