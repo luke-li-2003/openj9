@@ -1716,28 +1716,10 @@ J9::TransformUtil::transformIndirectLoadChainAt(TR::Compilation *comp, TR::Node 
 bool
 J9::TransformUtil::transformIndirectLoadChain(TR::Compilation *comp, TR::Node *node, TR::Node *baseExpression, TR::KnownObjectTable::Index baseKnownObject, TR::Node **removedNode)
    {
-#if defined(J9VM_OPT_JITSERVER)
-   // Under JITServer, call a simplified version of transformIndirectLoadChain
-   // that does not access the VM
-   if (comp->isOutOfProcessCompilation())
-      {
-      int32_t stableArrayRank =
-         comp->getKnownObjectTable()->getArrayWithStableElementsRank(baseKnownObject);
-      bool result =
-         TR::TransformUtil::transformIndirectLoadChainServerImpl(comp,
-                                                                 node,
-                                                                 baseExpression,
-                                                                 baseKnownObject,
-                                                                 stableArrayRank,
-                                                                 removedNode);
-      return result;
-      }
-#endif /* defined(J9VM_OPT_JITSERVER) */
-
-   TR::VMAccessCriticalSection transformIndirectLoadChain(comp->fej9());
    int32_t stableArrayRank = comp->getKnownObjectTable()->getArrayWithStableElementsRank(baseKnownObject);
 
-   bool result = TR::TransformUtil::transformIndirectLoadChainImpl(comp, node, baseExpression, (void*)comp->getKnownObjectTable()->getPointer(baseKnownObject), stableArrayRank, removedNode);
+   bool result = TR::TransformUtil::transformIndirectLoadChainImpl(comp, node, baseExpression,
+      baseKnownObject, stableArrayRank, removedNode);
    return result;
    }
 
@@ -2015,17 +1997,18 @@ J9::TransformUtil::transformIndirectLoadChainServerImpl(TR::Compilation *comp, T
  *
  */
 bool
-J9::TransformUtil::transformIndirectLoadChainImpl(TR::Compilation *comp, TR::Node *node, TR::Node *baseExpression, void *baseAddress, int32_t baseStableArrayRank, TR::Node **removedNode)
+J9::TransformUtil::transformIndirectLoadChainImpl(TR::Compilation *comp, TR::Node *node, TR::Node *baseExpression, TR::KnownObjectTable::Index baseKnownObject, int32_t baseStableArrayRank, TR::Node **removedNode)
    {
    bool isBaseStableArray = baseStableArrayRank > 0;
 
    TR_J9VMBase *fej9 = comp->fej9();
-#if defined(J9VM_OPT_JITSERVER)
-   TR_ASSERT_FATAL(!comp->isOutOfProcessCompilation(), "It's not safe to call transformIndirectLoadChainImpl() in JITServer mode");
-#endif
-   TR_ASSERT(TR::Compiler->vm.hasAccess(comp), "transformIndirectLoadChain requires VM access");
-   TR_ASSERT(node->getOpCode().isLoadIndirect(), "Expecting indirect load; found %s %p", node->getOpCode().getName(), node);
-   TR_ASSERT(node->getNumChildren() == 1, "Expecting indirect load %s %p to have one child; actually has %d", node->getOpCode().getName(), node, node->getNumChildren());
+   bool isServer = comp->isOutOfProcessCompilation();
+
+   TR_ASSERT(node->getOpCode().isLoadIndirect(), "Expecting indirect load; found %s %p",
+             node->getOpCode().getName(), node);
+   TR_ASSERT(node->getNumChildren() == 1,
+             "Expecting indirect load %s %p to have one child; actually has %d",
+             node->getOpCode().getName(), node, node->getNumChildren());
 
    if (comp->compileRelocatableCode())
       {
@@ -2041,31 +2024,44 @@ J9::TransformUtil::transformIndirectLoadChainImpl(TR::Compilation *comp, TR::Nod
       return false;
 
    // Fold initializeStatus field in J9Class whose finality is conditional on the value it is holding
-   if (!symRef->isUnresolved() && symRef == comp->getSymRefTab()->findInitializeStatusFromClassSymbolRef())
+   if (!symRef->isUnresolved()
+      && symRef == comp->getSymRefTab()->findInitializeStatusFromClassSymbolRef())
       {
-      J9Class* clazz = (J9Class*)baseAddress;
-      traceMsg(comp, "Looking at node %p with initializeStatusFromClassSymbol, class %p initialize status is %d\n", node, clazz, clazz->initializeStatus);
-      // Only fold the load if the class has been initialized
-      if (fej9->isClassInitialized((TR_OpaqueClassBlock *) clazz) == J9ClassInitSucceeded)
+      if (isServer)
          {
-         if (node->getDataType() == TR::Int32)
-            {
-            if (changeIndirectLoadIntoConst(node, TR::iconst, removedNode, comp))
-               node->setInt(J9ClassInitSucceeded);
-            else
-               return false;
-            }
-         else
-            {
-            if (changeIndirectLoadIntoConst(node, TR::lconst, removedNode, comp))
-               node->setLongInt(J9ClassInitSucceeded);
-            else
-               return false;
-            }
-         return true;
+         return false;
          }
       else
-         return false;
+         {
+         TR::VMAccessCriticalSection transformIndirectLoadChain(comp->fej9());
+
+         J9Class* clazz = (J9Class*) comp->getKnownObjectTable()->getPointer(baseKnownObject);
+         traceMsg(comp,
+                  "Looking at node %p with initializeStatusFromClassSymbol,"
+                     " class %p initialize status is %d\n",
+                  node, clazz, clazz->initializeStatus);
+         // Only fold the load if the class has been initialized
+         if (fej9->isClassInitialized((TR_OpaqueClassBlock *) clazz) == J9ClassInitSucceeded)
+            {
+            if (node->getDataType() == TR::Int32)
+               {
+               if (changeIndirectLoadIntoConst(node, TR::iconst, removedNode, comp))
+                  node->setInt(J9ClassInitSucceeded);
+               else
+                  return false;
+               }
+            else
+               {
+               if (changeIndirectLoadIntoConst(node, TR::lconst, removedNode, comp))
+                  node->setLongInt(J9ClassInitSucceeded);
+               else
+                  return false;
+               }
+            return true;
+            }
+         else
+            return false;
+         }
       }
 
    if (!isBaseStableArray && !fej9->canDereferenceAtCompileTime(symRef, comp))
@@ -2077,15 +2073,27 @@ J9::TransformUtil::transformIndirectLoadChainImpl(TR::Compilation *comp, TR::Nod
       return false;
       }
 
-   // Dereference the chain starting from baseAddress and get the field address
-   void *fieldAddress = dereferenceStructPointerChain(baseAddress, baseExpression, isBaseStableArray, node, comp);
-   if (!fieldAddress)
+   void *valuePtr;
+   if (isServer)
       {
-      if (comp->getOption(TR_TraceOptDetails))
+      // Instead of the recursive dereferenceStructPointerChain, we only consider a single level
+      // of indirection
+      }
+   else // not server
+      {
+      TR::VMAccessCriticalSection transformIndirectLoadChain(comp->fej9());
+      // Dereference the chain starting from baseAddress and get the field address
+      void *fieldAddress = dereferenceStructPointerChain(baseAddress, baseExpression,
+                                                         isBaseStableArray, node, comp);
+      if (!fieldAddress)
          {
-         traceMsg(comp, "Abort transformIndirectLoadChain - cannot verify/dereference field access to %s in %p!\n", symRef->getName(comp->getDebug()), baseAddress);
+         if (comp->getOption(TR_TraceOptDetails))
+            {
+            traceMsg(comp, "Abort transformIndirectLoadChain - cannot verify/dereference field access to %s in %p!\n", symRef->getName(comp->getDebug()), baseAddress);
+            }
+         return false;
          }
-      return false;
+      valuePtr = fieldAddress;
       }
 
    // The last step in the dereference chain is not necessarily an address.
