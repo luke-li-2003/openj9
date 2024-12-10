@@ -2981,7 +2981,7 @@ handleServerMessage(JITServer::ClientStream *client, TR_J9VM *fe, JITServer::Mes
          TR::KnownObjectTable::Index baseObjectIndex = std::get<0>(recv);
          intptr_t fieldOffset = std::get<1>(recv);
 
-         UDATA data = 0;
+         J9::TransformUtil::value data;
 
             {
             TR::VMAccessCriticalSection addFieldAddressFromBaseIndex(fe);
@@ -2989,7 +2989,7 @@ handleServerMessage(JITServer::ClientStream *client, TR_J9VM *fe, JITServer::Mes
 
             uintptr_t fieldAddress = baseObjectAddress + fieldOffset;
 
-            data = *(UDATA *) fieldAddress;
+            data = *(J9::TransformUtil::value *) fieldAddress;
             }
 
          client->write(response, data);
