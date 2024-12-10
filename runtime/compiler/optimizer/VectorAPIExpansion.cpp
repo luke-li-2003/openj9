@@ -863,7 +863,7 @@ TR_VectorAPIExpansion::getOpaqueClassBlockFromClassNode(TR::Compilation *comp, T
          {
          auto stream = comp->getStream();
          stream->write(JITServer::MessageType::KnownObjectTable_getOpaqueClass,
-                        symRef->getKnownObjectIndex());
+                        knownObjectIndex);
 
          clazz = (TR_OpaqueClassBlock *)std::get<0>(stream->read<uintptr_t>());
          }
@@ -898,40 +898,7 @@ TR_VectorAPIExpansion::getDataTypeFromClassNode(TR::Compilation *comp, TR::Node 
 TR_OpaqueClassBlock *
 TR_VectorAPIExpansion::getArrayClassFromDataType(TR::Compilation *comp, TR::DataType type, bool booleanClass)
    {
-   TR_J9VMBase *fej9 = comp->fej9();
-   J9JavaVM *vm = fej9->getJ9JITConfig()->javaVM;
-   J9Class *j9class;
-
-
-   switch (type)
-      {
-      case TR::Float:
-         j9class = vm->floatArrayClass;
-         break;
-      case TR::Double:
-         j9class = vm->doubleArrayClass;
-         break;
-      case TR::Int8:
-         j9class = vm->byteArrayClass;
-         break;
-      case TR::Int16:
-         j9class = vm->shortArrayClass;
-         break;
-      case TR::Int32:
-         j9class = vm->intArrayClass;
-         break;
-      case TR::Int64:
-         j9class = vm->longArrayClass;
-         break;
-      default:
-         TR_ASSERT_FATAL(false, "Incorrect array element type");
-         return NULL;
-      }
-
-   if (booleanClass)
-      j9class = vm->booleanArrayClass;
-
-   return fej9->convertClassPtrToClassOffset(j9class);
+   return comp->fej9()->getArrayClassFromDataType(type, booleanClass);
    }
 
 
@@ -1519,7 +1486,6 @@ TR_VectorAPIExpansion::boxChild(TR::TreeTop *treeTop, TR::Node *node, uint32_t i
    newObject->setSymbolReference(comp()->getSymRefTab()->findOrCreateNewObjectSymbolRef(comp()->getMethodSymbol()));
 
    TR_J9VMBase *fej9 = comp()->fej9();
-   TR::VMAccessCriticalSection getClassFromSignature(fej9);
    TR::SymbolReference *j9class = comp()->getSymRefTab()->findOrCreateClassSymbol(comp()->getMethodSymbol(), -1, vecClass);
 
    TR_ASSERT_FATAL(j9class, "J9Class symbol reference should not be null");
