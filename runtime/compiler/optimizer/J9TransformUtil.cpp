@@ -1198,6 +1198,8 @@ J9::TransformUtil::canFoldStaticFinalField(
          TR_PersistentClassInfo *classInfo =
             cht->findClassInfoAfterLocking(declaringClass, comp);
 
+         fprintf(stderr, "working with classInfo %p %p", classInfo, declaringClass);
+
          if (classInfo != NULL)
             {
             putstaticScanDone = true;
