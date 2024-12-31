@@ -48,6 +48,7 @@ class TR_MethodEvent
    {
    public:
    enum { InvalidEvent=0,
+          CompileMethodAPI,
           InterpreterCounterTripped,
           InterpretedMethodSample,
           JittedMethodSample,

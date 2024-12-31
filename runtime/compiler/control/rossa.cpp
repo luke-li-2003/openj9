@@ -879,7 +879,7 @@ internalCompileClass(J9VMThread * vmThread, J9Class * clazz)
          {
          bool queued = false;
          TR_MethodEvent event;
-         event._eventType = TR_MethodEvent::InterpreterCounterTripped;
+         event._eventType = TR_MethodEvent::CompileMethodAPI;
          event._j9method = method;
          event._oldStartPC = 0;
          event._vmThread = vmThread;

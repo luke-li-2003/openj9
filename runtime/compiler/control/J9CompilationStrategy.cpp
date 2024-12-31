@@ -97,6 +97,7 @@ TR_OptimizationPlan *J9::CompilationStrategy::processEvent(TR_MethodEvent *event
          plan = self()->processInterpreterSample(event);
          *newPlanCreated = true;
          break;
+      case TR_MethodEvent::CompileMethodAPI:
       case TR_MethodEvent::InterpreterCounterTripped:
          TR_ASSERT(event->_oldStartPC == 0, "oldStartPC should be 0 for an interpreted method");
          compInfo->_stats._methodsCompiledOnCount++;
@@ -115,6 +116,13 @@ TR_OptimizationPlan *J9::CompilationStrategy::processEvent(TR_MethodEvent *event
             plan = TR_OptimizationPlan::alloc(hotnessLevel, true, false);
          else
             plan = TR_OptimizationPlan::alloc(hotnessLevel);
+
+         // set a flag to indicate the counter was not tripped
+         if (event->_eventType == TR_MethodEvent::CompileMethodAPI)
+            {
+            plan->setIsCompileMethodAPI(true);
+            }
+
          *newPlanCreated = true;
          // the optimization plan needs to include opt level and if we do profiling
          // these may change

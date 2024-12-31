@@ -11955,7 +11955,11 @@ TR::CompilationInfo::replenishInvocationCount(J9Method *method, TR::Compilation 
       }
    else
       {
-      TR_ASSERT(false, "Unexpected value for method->extra = %p (method=%p)\n", TR::CompilationInfo::getJ9MethodExtra(method), method);
+      if (!comp->getOptimizationPlan()->getIsCompileMethodAPI())
+         {
+         TR_ASSERT(false, "Unexpected value for method->extra = %p (method=%p)\n",
+            TR::CompilationInfo::getJ9MethodExtra(method), method);
+         }
       }
    }
 
