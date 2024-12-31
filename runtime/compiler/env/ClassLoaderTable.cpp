@@ -189,7 +189,7 @@ TR_PersistentClassLoaderTable::associateClassLoaderWithClass(J9VMThread *vmThrea
    {
    // Since current thread has shared VM access and holds the classTableMutex,
    // no other thread can be modifying the table at the same time.
-   TR_ASSERT(hasSharedVMAccess(vmThread), "Must have shared VM access");
+   TR_ASSERT((vmThread->publicFlags & J9_PUBLIC_FLAGS_VM_ACCESS), "Must have shared VM access");
    TR_ASSERT(TR::MonitorTable::get()->getClassTableMutex()->owned_by_self(), "Must hold classTableMutex");
 
    bool useAOTCache = false;
