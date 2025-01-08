@@ -1311,6 +1311,7 @@ handleServerMessage(JITServer::ClientStream *client, TR_J9VM *fe, JITServer::Mes
             OMR::CriticalSection romClassCache(compInfo->getclassesCachedAtServerMonitor());
             compInfo->getclassesCachedAtServer().insert(clazz);
             }
+         printf("LL RMGRRC %p", clazz);
          client->write(response, JITServerHelpers::packRemoteROMClassInfo(clazz, fe->vmThread(), trMemory, true));
          }
          break;
@@ -2974,12 +2975,15 @@ handleServerMessage(JITServer::ClientStream *client, TR_J9VM *fe, JITServer::Mes
 
             uintptr_t objectPointer = fe->getReferenceFieldAtAddress(fieldAddress);
 
+            printf("LL kotaf1 %p", objectPointer);
             if (objectPointer)
                resultIndex = knot->getOrCreateIndexAt(&objectPointer, isArrayWithConstantElements);
             }
 
          uintptr_t *resultPointer = (resultIndex == TR::KnownObjectTable::UNKNOWN) ?
                NULL : knot->getPointerLocation(resultIndex);
+
+         printf("LL kotaf2 %p", resultPointer);
 
          client->write(response, resultIndex, resultPointer);
          }
@@ -3012,7 +3016,10 @@ handleServerMessage(JITServer::ClientStream *client, TR_J9VM *fe, JITServer::Mes
          classInfos.reserve(ramClasses.size());
 
          for (J9Class *ramClass : ramClasses)
+            {
+            printf("LL AOTC %p", ramClass);
             classInfos.push_back(JITServerHelpers::packRemoteROMClassInfo(ramClass, fe->vmThread(), trMemory, true));
+            }
 
             {
             OMR::CriticalSection cs(compInfo->getclassesCachedAtServerMonitor());
