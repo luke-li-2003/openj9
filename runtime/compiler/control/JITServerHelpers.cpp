@@ -1012,9 +1012,9 @@ JITServerHelpers::packRemoteROMClassInfo(J9Class *clazz, J9VMThread *vmThread, T
    // We do not want that, because these values will be cached and later used in non-AOT
    // compilations, where we always need a non-NULL result.
    TR_J9VM *fe = (TR_J9VM *)TR_J9VMBase::get(vmThread->javaVM->jitConfig, vmThread);
-   printf("LL prrci %p %p\n", clazz, clazz->eyecatcher);
+   TR_VerboseLog::writeLineLocked(TR_Vlog_INFO, "LL prrci %p %p\n", clazz, clazz->eyecatcher);
    J9Method *methodsOfClass = (J9Method *)fe->getMethods((TR_OpaqueClassBlock *)clazz);
-   printf("LL fprrci %p %p\n", clazz, clazz->eyecatcher);
+   TR_VerboseLog::writeLineLocked(TR_Vlog_INFO, "LL fprrci %p %p\n", clazz, clazz->eyecatcher);
    int32_t numDims = 0;
    TR_OpaqueClassBlock *baseClass = fe->getBaseComponentClass((TR_OpaqueClassBlock *)clazz, numDims);
    TR_OpaqueClassBlock *parentClass = fe->getSuperClass((TR_OpaqueClassBlock *)clazz);
