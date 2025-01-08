@@ -884,8 +884,7 @@ JITServerHelpers::printJITServerCHTableStats(J9JITConfig *jitConfig, TR::Compila
          j9tty_printf(PORTLIB, "Num classes updated: %d. Average per compilation: %f\n", table->_numClassesUpdated, table->_numClassesUpdated / float(table->_numUpdates));
          j9tty_printf(PORTLIB, "Num classes removed: %d. Average per compilation: %f\n", table->_numClassesRemoved, table->_numClassesRemoved / float(table->_numUpdates));
          j9tty_printf(PORTLIB, "Num class info queries: %d. Average per compilation: %f\n", table->_numQueries, table->_numQueries / float(table->_numUpdates));
-         j9tty_printf(PORTLIB, "Total update bytes: %d. Compilation max: %d. Average per compilation: %f\n", table->_updateBytes, table->_maxUpdateBytes, table->_updateBytes / float(table->_numUpdates));
-         }
+         j9tty_printf(PORTLIB, "Total update bytes: %d. Compilation max: %d. Average per compilation: %f\n", table->_updateBytes, table->_maxUpdateBytes, table->_updateBytes / float(table->_numUpdates)); }
       }
 #endif
    }
@@ -1013,6 +1012,7 @@ JITServerHelpers::packRemoteROMClassInfo(J9Class *clazz, J9VMThread *vmThread, T
    // We do not want that, because these values will be cached and later used in non-AOT
    // compilations, where we always need a non-NULL result.
    TR_J9VM *fe = (TR_J9VM *)TR_J9VMBase::get(vmThread->javaVM->jitConfig, vmThread);
+   printf("LL prrci %p %p\n", clazz, clazz->eyecatcher);
    J9Method *methodsOfClass = (J9Method *)fe->getMethods((TR_OpaqueClassBlock *)clazz);
    int32_t numDims = 0;
    TR_OpaqueClassBlock *baseClass = fe->getBaseComponentClass((TR_OpaqueClassBlock *)clazz, numDims);
