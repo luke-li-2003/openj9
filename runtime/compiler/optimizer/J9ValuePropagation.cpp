@@ -2078,6 +2078,11 @@ J9::ValuePropagation::constrainRecognizedMethod(TR::Node *node)
          {
          case TR::java_lang_invoke_MethodHandle_asType:
             {
+            // The macros used later
+            // will access vm information which is not available on the JITServer,
+            // bypass in this case to prevent an invalid class pointer being retrieved
+            if (comp()->isOutOfProcessCompilation())
+               break;
             TR::Node* mh = node->getArgument(0);
             TR::Node* mt = node->getArgument(1);
             bool mhConstraintGlobal, mtConstraintGlobal;
