@@ -12173,7 +12173,6 @@ J9::Power::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
             return true;
             }
          break;
-
       case TR::java_lang_Math_fma_D:
       case TR::java_lang_StrictMath_fma_D:
          resultReg = inlineFPTrg1Src3(node, TR::InstOpCode::fmadd, cg);
