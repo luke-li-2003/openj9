@@ -10564,14 +10564,47 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, tempReg, 0xFFFFFFF0);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, vendReg, endReg, tempReg);
 
-   // if v is 16byte aligned, goto AlignedPrepLabel if we need to load an initial value,
-   // or straight to the VSX_Loop otherwise
+   // load the initial value
+   TR::Register *initialValueReg = low4Reg;
+   if (nonZeroInitial)
+      {
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, AlignedPrepLabel);
+      if (isLE) // in LE, load into the highest word of the highest vector
+         {
+         switch (elementType)
+            {
+            case TR::Int8:
+               initialValueReg = fourth4Reg;
+               break;
+            case TR::Int16:
+               initialValueReg = high4Reg;
+               break;
+            case TR::Int32:
+               //initialValueReg = low4Reg; by default
+               break;
+            default:
+               TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
+            }
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, initialValueReg, hashReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, vconstant0Reg, initialValueReg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, initialValueReg, vconstant0Reg, 12);
+         }
+      else // in BE, load into the lowest word
+         {
+         //initialValueReg = low4Reg; by default
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, low4Reg, hashReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, low4Reg, vconstant0Reg, low4Reg, 8);
+         }
+      }
+
+   // if v is 16byte aligned, goto the VSX_Loop
    loadConstant(cg, node, 0xF, tempReg);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, tempReg, valueReg, tempReg);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0x0);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node,
-      nonZeroInitial ? AlignedPrepLabel : VSXLabel, condReg);
+      VSXLabel, condReg);
 
+   // deal with misaligned data
    // The reason we don't do VSX loop directly is we want to avoid loading unaligned data
    // and deal with it with vperm.
    // Instead, we load the first unaligned part, let VSX handle the rest aligned part.
@@ -10601,34 +10634,74 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp1Reg, vtmp1Reg, vtmp2Reg);
       }
 
+   // Since we are putting the initial value at the most significant word in our
+   // accumulators, we must multiply it by 31 for every element inserted from the mis-aligned batch
+   if (nonZeroInitial)
+      {
+      // tempReg = (128 - tempReg) = number of bits in the mis-aligned batch
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::nor, node, tempReg, tempReg, tempReg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 129);
+      // tempReg = tempReg / size * 4 = tempReg >> (lg(size)-2) = the address of the multiplier
+      switch (elementType)
+         {
+         case TR::Int8:
+            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, tempReg, 1);
+            break;
+         case TR::Int16:
+            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, tempReg, 2);
+            break;
+         case TR::Int32:
+            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, tempReg, 3);
+            break;
+         default:
+            TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
+         }
+      // adjust for the first 4 elements in the multiplier array
+      if (isLE) {
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 0xF);
+      } else { // for BE, we want the correct value to be in the third word
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 0xF-12);
+      }
+
+      // move the value into a temporary register
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, initialValueReg, initialValueReg);
+      // multiply
+      generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
+         TR::MemoryReference::createWithIndexReg(cg, multiplierAddrReg, tempReg, 16));
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, vtmp2Reg, vtmp2Reg, multiplierReg);
+      // restore the multiplier reg
+      generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
+         TR::MemoryReference::createWithIndexReg(cg, multiplierAddrReg, constant0Reg, 16));
+      }
+
    // unpack masked v to accumulators
    // unpacking is signed by default, but we can use the mask for unsigned cases
    switch (elementType)
       {
       case TR::Int8: // unpack into halfwords, then words
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsb, node, vtmp2Reg, vtmp1Reg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsb, node, vtmp3Reg, vtmp1Reg);
          // fourth4Reg
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, fourth4Reg, vtmp2Reg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, fourth4Reg, vtmp3Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, fourth4Reg, fourth4Reg, vunpackMaskReg);
             }
          // third4Reg
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, third4Reg, vtmp2Reg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, third4Reg, vtmp3Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, third4Reg, third4Reg, vunpackMaskReg);
             }
 
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsb, node, vtmp2Reg, vtmp1Reg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsb, node, vtmp3Reg, vtmp1Reg);
          // high4Reg
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, high4Reg, vtmp2Reg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, high4Reg, vtmp3Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, high4Reg, high4Reg, vunpackMaskReg);
             }
          // low4Reg
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, low4Reg, vtmp2Reg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, low4Reg, vtmp3Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, low4Reg, low4Reg, vunpackMaskReg);
@@ -10653,159 +10726,10 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
       }
 
-   // at this point the data is definitely mis-aligned, so we will have space
-   // to put the initial value before the first batch of data
-   // Example: in LE, a int16 array [a, b, c, 1, 2, 3, 4, 5] where a-c are gibberish
-   // we have masked out the gibberish and unpack the array into high4 and low4Reg
-   // high4: [5, 4, 3, 2]; low4: [1, 0, 0, 0]
-   // we know we have 3 empty elements, and hence 5 filled elements
-   // 5 / 4 = 1 => we need to put the initial value in register 1 (low4)
-   // 5 % 4 = 1 => it should be in element 1
-   // => low4: [1, init, 0, 0]
+   // plug in the initial value now that we are done unpacking
    if (nonZeroInitial)
       {
-      TR::LabelSymbol *reg0Label, *reg1Label, *reg2Label, *reg3Label;
-      TR::LabelSymbol *endCaseLabel = (elementType != TR::Int32) ? generateLabelSymbol(cg) : NULL;
-
-      // tempReg = (128 - tempReg) >> lg(n) = number of elements in the first batch
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::nor, node, tempReg, tempReg, tempReg);
-      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 129);
-      switch (elementType)
-         {
-         case TR::Int8:
-            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, tempReg, 3);
-            break;
-         case TR::Int16:
-            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, tempReg, 4);
-            break;
-         case TR::Int32:
-            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, tempReg, 5);
-            break;
-         default:
-            TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
-         }
-
-      // vtmp2Reg = (tempReg & 0x3) << 5 = the bit position within the reg for the initial value
-      generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, temp2Reg, 0x3);
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, temp2Reg, temp2Reg, tempReg);
-      generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, temp2Reg, temp2Reg, 5, 0xFFFFFFFFFFFFFFE0);
-      generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, temp2Reg);
-      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
-      // tempReg = tempReg >> 2 = the register we should place the initial value in
-      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, tempReg, 2);
-
-      // put the hashCode in the lowest word for BE, highest for LE
-      // and shift it to the first empty space
-      if (isLE)
-         {
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, hashReg);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
-         generateTrg1Src2Instruction(cg, TR::InstOpCode::vsro, node, vtmp1Reg, vtmp1Reg, vtmp2Reg);
-         }
-      else // BE
-         {
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, hashReg);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-         generateTrg1Src2Instruction(cg, TR::InstOpCode::vslo, node, vtmp1Reg, vtmp1Reg, vtmp2Reg);
-         }
-
-      // jump table
-      switch (elementType)
-         {
-         case TR::Int8:
-            reg2Label = generateLabelSymbol(cg);
-            reg3Label = generateLabelSymbol(cg);
-            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0x2);
-            generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, reg2Label, condReg);
-            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0x3);
-            generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, reg3Label, condReg);
-            // fall through
-         case TR::Int16:
-            reg0Label = generateLabelSymbol(cg);
-            reg1Label = generateLabelSymbol(cg);
-            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0x0);
-            generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, reg0Label, condReg);
-            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0x1);
-            generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, reg1Label, condReg);
-            // fall through
-         case TR::Int32:
-            break;
-         default:
-            TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
-         }
-      if (isLE)
-         {
-         switch (elementType)
-            {
-            case TR::Int8:
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg0Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, fourth4Reg, fourth4Reg, vtmp1Reg);
-               generateLabelInstruction(cg, TR::InstOpCode::b, node, endCaseLabel);
-
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg1Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, third4Reg, third4Reg, vtmp1Reg);
-               generateLabelInstruction(cg, TR::InstOpCode::b, node, endCaseLabel);
-
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg2Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, high4Reg, high4Reg, vtmp1Reg);
-               generateLabelInstruction(cg, TR::InstOpCode::b, node, endCaseLabel);
-
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg3Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, low4Reg, low4Reg, vtmp1Reg);
-               break;
-            case TR::Int16:
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg0Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, high4Reg, high4Reg, vtmp1Reg);
-               generateLabelInstruction(cg, TR::InstOpCode::b, node, endCaseLabel);
-
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg1Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, low4Reg, low4Reg, vtmp1Reg);
-               break;
-            case TR::Int32:
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, low4Reg, low4Reg, vtmp1Reg);
-               break;
-            default:
-               TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
-            }
-         }
-      else // BE
-         {
-         switch (elementType)
-            {
-            case TR::Int8:
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg0Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, low4Reg, low4Reg, vtmp1Reg);
-               generateLabelInstruction(cg, TR::InstOpCode::b, node, endCaseLabel);
-
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg1Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, high4Reg, high4Reg, vtmp1Reg);
-               generateLabelInstruction(cg, TR::InstOpCode::b, node, endCaseLabel);
-
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg2Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, third4Reg, third4Reg, vtmp1Reg);
-               generateLabelInstruction(cg, TR::InstOpCode::b, node, endCaseLabel);
-
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg3Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, fourth4Reg, fourth4Reg, vtmp1Reg);
-               break;
-            case TR::Int16:
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg0Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, low4Reg, low4Reg, vtmp1Reg);
-               generateLabelInstruction(cg, TR::InstOpCode::b, node, endCaseLabel);
-
-               generateLabelInstruction(cg, TR::InstOpCode::label, node, reg1Label);
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, high4Reg, high4Reg, vtmp1Reg);
-               break;
-            case TR::Int32:
-               generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, low4Reg, low4Reg, vtmp1Reg);
-               break;
-            default:
-               TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
-            }
-         }
-      if (elementType != TR::Int32)
-         generateLabelInstruction(cg, TR::InstOpCode::label, node, endCaseLabel);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, initialValueReg, initialValueReg, vtmp2Reg);
       }
 
    // advance v to next aligned pointer
@@ -10815,41 +10739,6 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, valueReg, valueReg, tempReg);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp8, node, condReg, valueReg, vendReg);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, POSTVSXLabel, condReg);
-   // else just go to VSX_Loop
-   generateLabelInstruction(cg, TR::InstOpCode::b, node, VSXLabel);
-
-   // ------ AlignedPrepLabel:
-   // we just need to load the initial value if applicable
-   if (nonZeroInitial)
-      {
-      generateLabelInstruction(cg, TR::InstOpCode::label, node, AlignedPrepLabel);
-      if (isLE) // in LE, load into the highest word of the highest vector
-         {
-         TR::Register *initialValueReg;
-         switch (elementType)
-            {
-            case TR::Int8:
-               initialValueReg = fourth4Reg;
-               break;
-            case TR::Int16:
-               initialValueReg = high4Reg;
-               break;
-            case TR::Int32:
-               initialValueReg = low4Reg;
-               break;
-            default:
-               TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
-            }
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, initialValueReg, hashReg);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, vconstant0Reg, initialValueReg, 8);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, initialValueReg, vconstant0Reg, 12);
-         }
-      else // in BE, load into the lowest word
-         {
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, low4Reg, hashReg);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, low4Reg, vconstant0Reg, low4Reg, 8);
-         }
-      }
 
    // ------ VSX_LOOP:
    // load v (here v must be aligned)
