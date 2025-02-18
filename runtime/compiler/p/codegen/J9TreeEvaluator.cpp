@@ -10439,13 +10439,12 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    TR::Register *vtmp2Reg = cg->allocateRegister(TR_VRF);
    TR::Register *vconstant0Reg = cg->allocateRegister(TR_VRF);
    TR::Register *vconstantNegReg = cg->allocateRegister(TR_VRF);
-   TR::Register *vunpackMaskReg = cg->allocateRegister(TR_VRF);
 
    // we can load 16 bytes at once, but each register can only accumulate 4 values
    // so for smaller datatypes we need more than one registers
    TR::Register *low4Reg = cg->allocateRegister(TR_VRF);
    TR::Register *high4Reg, *third4Reg, *fourth4Reg;
-   TR::Register *vtmp3Reg;
+   TR::Register *vtmp3Reg, *vunpackMaskReg;
    switch (elementType)
       {
       case TR::Int8:
@@ -10455,6 +10454,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          // fall through
       case TR::Int16:
          high4Reg = cg->allocateRegister(TR_VRF);
+         vunpackMaskReg = cg->allocateRegister(TR_VRF); // for masking unsigned types
          // fall through
       case TR::Int32:
          break;
@@ -10574,8 +10574,11 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vxor, node, vconstant0Reg, vconstant0Reg, vconstant0Reg);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vnor, node, vconstantNegReg, vconstant0Reg, vconstant0Reg);
    // all four words in vunpackMaskReg a mask for the length of elementType
-   generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vunpackMaskReg, vconstant0Reg, vconstantNegReg, TR::DataType::getSize(elementType));
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltw, node, vunpackMaskReg, vunpackMaskReg, 3);
+   if (elementType != TR::Int32)
+      {
+      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vunpackMaskReg, vconstant0Reg, vconstantNegReg, TR::DataType::getSize(elementType));
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltw, node, vunpackMaskReg, vunpackMaskReg, 3);
+      }
    // vend = end & (~0xf) = end of aligned data
    generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, tempReg, 0xFFFFFFF0);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, vendReg, endReg, tempReg);
@@ -10616,8 +10619,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    loadConstant(cg, node, 0xF, tempReg);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, tempReg, valueReg, tempReg);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0x0);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node,
-      VSXLabel, condReg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, VSXLabel, condReg);
 
    // deal with misaligned data
    // The reason we don't do VSX loop directly is we want to avoid loading unaligned data
@@ -10914,16 +10916,14 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
 
    // Head of the serial loop
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialLabel);
-   // temp = hash
-   // hash = hash << 5
-   // hash = hash - temp
+   // temp = hash << 5
+   // hash = temp - hash
    // temp = v[i]
    // hash = hash + temp
    generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp8, node, condReg, valueReg, endReg);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, endLabel, condReg);
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, node, tempReg, hashReg);
-   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, hashReg, hashReg, 5, 0xFFFFFFFFFFFFFFE0);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, hashReg, tempReg, hashReg);
+   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, tempReg, hashReg, 5, 0xFFFFFFFFFFFFFFE0);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, hashReg, hashReg, tempReg);
    switch (elementType)
       {
       case TR::Int8:
@@ -10949,7 +10949,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // End of this method
    TR::RegisterDependencyConditions *dependencies =
       new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0,
-         (TR::Int8 == elementType ? 19 : (TR::Int16 == elementType ? 16 : 15)), // extra vector regs
+         (TR::Int8 == elementType ? 19 : (TR::Int16 == elementType ? 16 : 14)), // extra vector regs
          cg->trMemory());
 
    dependencies->addPostCondition(valueReg, TR::RealRegister::NoReg);
@@ -10970,7 +10970,6 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    dependencies->addPostCondition(vtmp2Reg, TR::RealRegister::NoReg);
    dependencies->addPostCondition(vconstant0Reg, TR::RealRegister::NoReg);
    dependencies->addPostCondition(vconstantNegReg, TR::RealRegister::NoReg);
-   dependencies->addPostCondition(vunpackMaskReg, TR::RealRegister::NoReg);
 
    dependencies->addPostCondition(low4Reg, TR::RealRegister::NoReg);
    switch (elementType)
@@ -10982,6 +10981,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          // fall through
       case TR::Int16:
          dependencies->addPostCondition(high4Reg, TR::RealRegister::NoReg);
+         dependencies->addPostCondition(vunpackMaskReg, TR::RealRegister::NoReg);
          // fall through
       case TR::Int32:
          break;
