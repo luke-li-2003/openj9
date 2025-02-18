@@ -10475,6 +10475,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       }
 
    TR::LabelSymbol *serialLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *VSXLoopPrep = generateLabelSymbol(cg);
    TR::LabelSymbol *VSXLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *POSTVSXLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *endLabel = generateLabelSymbol(cg);
@@ -10550,9 +10551,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       default:
          TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
       }
-   // load the first 4 elements into the 4 words of the multiplier
+   // point to the beginning of the array
    loadAddressConstant(cg, false, node, multiplierVector, multiplierAddrReg);
-   generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg, TR::MemoryReference::createWithIndexReg(cg, multiplierAddrReg, constant0Reg, 16));
 
    // clear accumulator registers
    switch (elementType)
@@ -10603,9 +10603,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
             default:
                TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
             }
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, initialValueReg, hashReg);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, vconstant0Reg, initialValueReg, 8);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, initialValueReg, vconstant0Reg, 12);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrws, node, initialValueReg, hashReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, initialValueReg, vconstant0Reg, 24);
          }
       else // in BE, load into the lowest word
          {
@@ -10615,11 +10614,11 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          }
       }
 
-   // if v is 16byte aligned, goto the VSX_Loop
+   // if v is 16byte aligned, goto the VSXLoopPrep
    loadConstant(cg, node, 0xF, tempReg);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, tempReg, valueReg, tempReg);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0x0);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, VSXLabel, condReg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, VSXLoopPrep, condReg);
 
    // deal with misaligned data
    // The reason we don't do VSX loop directly is we want to avoid loading unaligned data
@@ -10710,9 +10709,6 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
          TR::MemoryReference::createWithIndexReg(cg, multiplierAddrReg, tempReg, 16));
       generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, vtmp2Reg, vtmp2Reg, multiplierReg);
-      // restore the multiplier reg
-      generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
-         TR::MemoryReference::createWithIndexReg(cg, multiplierAddrReg, constant0Reg, 16));
       }
 
    // unpack masked v to accumulators
@@ -10782,6 +10778,11 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, valueReg, valueReg, tempReg);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp8, node, condReg, valueReg, vendReg);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, POSTVSXLabel, condReg);
+
+   // load the multiplierReg before going in the loop
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, VSXLoopPrep);
+   generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
+      TR::MemoryReference::createWithIndexReg(cg, multiplierAddrReg, constant0Reg, 16));
 
    // ------ VSX_LOOP:
    // load v (here v must be aligned)
