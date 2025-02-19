@@ -11013,7 +11013,6 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    cg->stopUsingRegister(vtmp2Reg);
    cg->stopUsingRegister(vconstant0Reg);
    cg->stopUsingRegister(vconstantNegReg);
-   cg->stopUsingRegister(vunpackMaskReg);
 
    cg->stopUsingRegister(low4Reg);
    switch (elementType)
@@ -11025,6 +11024,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          // fall through
       case TR::Int16:
          cg->stopUsingRegister(high4Reg);
+         cg->stopUsingRegister(vunpackMaskReg);
          // fall through
       case TR::Int32:
          break;
