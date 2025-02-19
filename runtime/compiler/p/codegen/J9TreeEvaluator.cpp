@@ -10603,8 +10603,9 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
             default:
                TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
             }
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrws, node, initialValueReg, hashReg);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, initialValueReg, vconstant0Reg, 24);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, initialValueReg, hashReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, vconstant0Reg, initialValueReg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, initialValueReg, initialValueReg, vconstant0Reg, 12);
          }
       else // in BE, load into the lowest word
          {
