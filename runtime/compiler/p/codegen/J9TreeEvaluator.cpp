@@ -10514,8 +10514,10 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src2Instruction(cg, TR::InstOpCode::XOR, node, tempReg, tempReg, tempReg);
    loadConstant(cg, node, 0x0, constant0Reg);
 
+#define SERIAL_LIMIT 16
+
    // if count<<lg(elementSize) < 16 goto serial
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 0x10);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, SERIAL_LIMIT);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, serialLabel, condReg);
 
    // load multiplier (anything with more than 4 bytes can be truncated)
@@ -10921,23 +10923,45 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // Head of the serial loop
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialLabel);
 
-   // tempReg = number of remaining bytes
+
+   TR::LabelSymbol *jumpLabels[SERIAL_LIMIT];
+   TR::LabelSymbol *table = generateLabelSymbol(cg);
+
+   cg->fixedLoadLabelAddressIntoReg(node, vendReg, serialLabel, NULL, tempReg);
+
+   // tempReg = number of remaining elements
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, tempReg, valueReg, endReg);
 
-   TR::LabelSymbol *jumpLabels[16];
-   for (int i = 0; i < 16/elementSize; i++)
+   switch (elementType)
+      {
+      case TR::Int8:
+         generateShiftLeftImmediate(cg, node, vendReg, vendReg, 2);
+         break;
+      case TR::Int16:
+         generateShiftLeftImmediate(cg, node, vendReg, vendReg, 1);
+         break;
+      case TR::Int32:
+         // nothing
+         break;
+      default:
+         TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
+      }
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, tempReg, vendReg, tempReg);
+   generateSrc1Instruction(cg, TR::InstOpCode::mtctr, node, vendReg);
+   generateInstruction(cg, TR::InstOpCode::bctr, node);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, jumpLabels[i]);
+   for (int i = 0; i < SERIAL_LIMIT/elementSize; i++)
       {
       if (i != 0)
          jumpLabels[i] = generateLabelSymbol(cg);
       else
          jumpLabels[i] = endLabel;
 
-      // match the number of remaining bytes
-      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, i*elementSize);
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, jumpLabels[i], condReg);
+      generateLabelInstruction(cg, TR::InstOpCode::b, node, jumpLabels[i]);
       }
 
-   for (int i = (16/elementSize)-1; i >= 1; i--)
+   for (int i = (SERIAL_LIMIT/elementSize)-1; i >= 1; i--)
       {
       generateLabelInstruction(cg, TR::InstOpCode::label, node, jumpLabels[i]);
       // temp = hash << 5
