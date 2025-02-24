@@ -235,6 +235,7 @@ namespace JITServer
 void *loadLibssl()
    {
    // We want to load libssl.so and get access to the functions inside.
+   return NULL;
    // When libssl3 (or higher) is bundled with the JDK, we want to load that version
    // in preference over the one present on the system. `dlopen` will do that because
    // the RUNPATH for the JIT dll (from which `dlopen` is invoked) includes the
