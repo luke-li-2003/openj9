@@ -10481,6 +10481,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    TR::LabelSymbol *VSXLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *POSTVSXLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *endLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *table = generateLabelSymbol(cg);
 
    // Skip header of the array
    intptr_t hdrSize = TR::Compiler->om.contiguousArrayHeaderSizeInBytes();
@@ -10510,11 +10511,36 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, valueReg, valueReg, endReg);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, endReg, valueReg, vendReg);
 
+#define SERIAL_LIMIT 16 
+
+   // ------------------------ Load ctr reg
+   cg->fixedLoadLabelAddressIntoReg(node, constant0Reg, table, NULL, tempReg);
+   // tempReg = number of remaining bytes 
+   generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, tempReg, 0xF);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, tempReg, tempReg, endReg);
+
+   switch (elementType)
+      {
+      case TR::Int8:
+         generateShiftLeftImmediate(cg, node, tempReg, tempReg, 2);
+         break;
+      case TR::Int16:
+         generateShiftLeftImmediate(cg, node, tempReg, tempReg, 1);
+         break;
+      case TR::Int32:
+         // nothing
+         break;
+      default:
+         TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
+      }
+
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, tempReg, constant0Reg, tempReg);
+   generateSrc1Instruction(cg, TR::InstOpCode::mtctr, node, tempReg);
+   // ---------------------- some instructions between the move and the branch
+
    // temp = 0
    generateTrg1Src2Instruction(cg, TR::InstOpCode::XOR, node, tempReg, tempReg, tempReg);
    loadConstant(cg, node, 0x0, constant0Reg);
-
-#define SERIAL_LIMIT 16
 
    // if count<<lg(elementSize) < 16 goto serial
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, SERIAL_LIMIT);
@@ -10583,6 +10609,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vunpackMaskReg, vconstant0Reg, vconstantNegReg, elementSize);
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltw, node, vunpackMaskReg, vunpackMaskReg, 3);
       }
+
    // vend = end & (~0xf) = end of aligned data
    generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, tempReg, 0xFFFFFFF0);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::AND, node, vendReg, endReg, tempReg);
@@ -10915,30 +10942,28 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, low4Reg, low4Reg, vtmp1Reg);
    generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, low4Reg, 12);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, low4Reg, low4Reg, vtmp1Reg);
-
    // move result to hashReg
    generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, low4Reg, vconstant0Reg, 8);
    generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrwz, node, hashReg, vtmp1Reg);
 
+   TR::LabelSymbol *serial2 = generateLabelSymbol(cg);
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, serial2);
+
    // Head of the serial loop
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialLabel);
 
-
-   TR::LabelSymbol *jumpLabels[SERIAL_LIMIT];
-   TR::LabelSymbol *table = generateLabelSymbol(cg);
-
-   cg->fixedLoadLabelAddressIntoReg(node, vendReg, serialLabel, NULL, tempReg);
-
-   // tempReg = number of remaining elements
+   // ------------------------ Load ctr reg
+   cg->fixedLoadLabelAddressIntoReg(node, vendReg, table, NULL, tempReg);
+   // tempReg = number of remaining bytes 
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, tempReg, valueReg, endReg);
 
    switch (elementType)
       {
       case TR::Int8:
-         generateShiftLeftImmediate(cg, node, vendReg, vendReg, 2);
+         generateShiftLeftImmediate(cg, node, tempReg, tempReg, 2);
          break;
       case TR::Int16:
-         generateShiftLeftImmediate(cg, node, vendReg, vendReg, 1);
+         generateShiftLeftImmediate(cg, node, tempReg, tempReg, 1);
          break;
       case TR::Int32:
          // nothing
@@ -10946,11 +10971,19 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       default:
          TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
       }
+
    generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, tempReg, vendReg, tempReg);
-   generateSrc1Instruction(cg, TR::InstOpCode::mtctr, node, vendReg);
+   generateSrc1Instruction(cg, TR::InstOpCode::mtctr, node, tempReg);
+
+   // ---------------------- some instructions between the move and the branch
+
+   // ------------ branch
+//if (nonZeroInitial) generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, serial2);
    generateInstruction(cg, TR::InstOpCode::bctr, node);
 
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, jumpLabels[i]);
+   TR::LabelSymbol *jumpLabels[SERIAL_LIMIT];
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, table);
    for (int i = 0; i < SERIAL_LIMIT/elementSize; i++)
       {
       if (i != 0)
