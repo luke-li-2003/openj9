@@ -10696,22 +10696,22 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       } else {
          // for BE, we will index all the way to the back of the array, subtract by the value
          // of tempReg, then subtract by an additional 16 bytes for the 4 padded zeros, and then
-         // index backward by 12 bytes to make sure the value we want is in word[3]
+         // index backward by 16 bytes to make sure the value we want is in word[3]
          // tempReg = -tempReg - 1, so we should add the one back later
          generateTrg1Src2Instruction(cg, TR::InstOpCode::nor, node, tempReg, tempReg, tempReg);
          switch (elementType)
             {
             case TR::Int8:
-               // 24 * 4 - 12 - 16 + 1 = 92
-               generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 69);
+               // 24 * 4 - 16 - 16 + 1 = 65
+               generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 65);
                break;
             case TR::Int16:
-               // 16 * 4 - 12 - 16 + 1 = 60
-               generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 37);
+               // 16 * 4 - 16 - 16 + 1 = 33
+               generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 33);
                break;
             case TR::Int32:
-               // 8 * 4 - 12 - 16 + 1 = 28
-               generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 5);
+               // 12 * 4 - 16 - 16 + 1 = 17
+               generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 17);
                break;
             default:
                TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
