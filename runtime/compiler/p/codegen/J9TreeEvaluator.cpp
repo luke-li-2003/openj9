@@ -10518,16 +10518,17 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    loadConstant(cg, node, 0x0, constant0Reg);
 
    // special cases for 0, 1, 2
+   /*
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 0);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, endLabel, condReg);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 1*TR::DataType::getSize(elementType));
    generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, special1Label, condReg);
+   */
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 2*TR::DataType::getSize(elementType));
    generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, special2Label, condReg);
 
    // using the serial loop is faster if there are less than 16 items
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg,
-      16*TR::DataType::getSize(elementType));
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 16*TR::DataType::getSize(elementType));
    generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, serialLabel, condReg);
 
    // load multiplier (anything with more than 4 bytes can be truncated)
@@ -10937,8 +10938,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
 #define UNROLL_FACTOR 4
    // vendReg = endReg - [(unroll_factor - 1) * elementSize]
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node,
-		   //vendReg, endReg, (UNROLL_FACTOR-1) * -1);
-		   vendReg, endReg, (UNROLL_FACTOR-1) * -1 * TR::DataType::getSize(elementType));
+      vendReg, endReg, (UNROLL_FACTOR-1) * -1 * TR::DataType::getSize(elementType));
 
    // --- unrolled loop
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialUnrollLabel);
@@ -10975,13 +10975,11 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, valueReg, valueReg, TR::DataType::getSize(elementType) * UNROLL_FACTOR);
    generateLabelInstruction(cg, TR::InstOpCode::b, node, serialUnrollLabel);
 
-	
+
    // --- single loop
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialLoopLabel);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp8, node, condReg, valueReg, endReg);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, endLabel, condReg);
-//if (nonZeroInitial)
-//	generateLabelInstruction(cg, TR::InstOpCode::b, node, serialLoopLabel);
    generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, tempReg, hashReg, 5, 0xFFFFFFFFFFFFFFE0);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, hashReg, hashReg, tempReg);
    switch (elementType)
@@ -11008,6 +11006,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
 
    // special cases
    // 1: multiply the initial value by 31 if needed, and add the element
+   /*
    generateLabelInstruction(cg, TR::InstOpCode::label, node, special1Label);
    if (nonZeroInitial)
       {
@@ -11037,6 +11036,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    else
       generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, node, hashReg, tempReg);
    generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
+   */
    // 2: do it twice
    generateLabelInstruction(cg, TR::InstOpCode::label, node, special2Label);
    if (nonZeroInitial)
