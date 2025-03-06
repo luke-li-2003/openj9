@@ -10454,7 +10454,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          // fall through
       case TR::Int16:
          high4Reg = cg->allocateRegister(TR_VRF);
-         vunpackMaskReg = cg->allocateRegister(TR_VRF); // for masking unsigned types
+         if (!isSigned)
+            vunpackMaskReg = cg->allocateRegister(TR_VRF); // for masking unsigned types
          // fall through
       case TR::Int32:
          break;
@@ -10589,7 +10590,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vxor, node, vconstant0Reg, vconstant0Reg, vconstant0Reg);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vnor, node, vconstantNegReg, vconstant0Reg, vconstant0Reg);
    // all four words in vunpackMaskReg a mask for the length of elementType
-   if (elementType != TR::Int32)
+   if (elementType != TR::Int32 && !isSigned)
       {
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vunpackMaskReg, vconstant0Reg, vconstantNegReg, TR::DataType::getSize(elementType));
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltw, node, vunpackMaskReg, vunpackMaskReg, 3);
@@ -11122,7 +11123,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          // fall through
       case TR::Int16:
          dependencies->addPostCondition(high4Reg, TR::RealRegister::NoReg);
-         dependencies->addPostCondition(vunpackMaskReg, TR::RealRegister::NoReg);
+         if (!isSigned)
+            dependencies->addPostCondition(vunpackMaskReg, TR::RealRegister::NoReg);
          // fall through
       case TR::Int32:
          break;
@@ -11163,7 +11165,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          // fall through
       case TR::Int16:
          cg->stopUsingRegister(high4Reg);
-         cg->stopUsingRegister(vunpackMaskReg);
+         if (!isSigned)
+            cg->stopUsingRegister(vunpackMaskReg);
          // fall through
       case TR::Int32:
          break;
