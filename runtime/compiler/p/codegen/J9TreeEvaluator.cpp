@@ -10635,14 +10635,14 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0x0);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, VSXLoopPrep, condReg);
 
-   // deal with misaligned data
+   // Deal with misaligned data:
    // The reason we don't do VSX loop directly is we want to avoid loading unaligned data
    // and deal with it with vperm.
    // Instead, we load the first unaligned part, let VSX handle the rest aligned part.
    // load unaligned v, mask out unwanted part
    // for example, if value = 0x12345, we mask out 0x12340~0x12344, keep 0x12345~0x1234F
 
-   // vtmp1Reg = mem(valueReg & 0xFFFFFFFFFFFFFFF0)
+   // vtmp1Reg = mem(valueReg & 0xFFFFFFFFFFFFFFF0) - due to lvx only loading aligned
    generateTrg1MemInstruction(cg, TR::InstOpCode::lvx, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, valueReg, constant0Reg, 16));
    // vtmp2Reg = tempReg = (valueReg & 0xF) << 3 i.e. the number of bits that are mis-aligned
    loadConstant(cg, node, 0xF, tempReg);
@@ -10688,7 +10688,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          default:
             TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
          }
-      // make it so that tempReg point it to the appropriate byte in the multiplierVectors
+      // make it so that tempReg point it to the appropriate word in the multiplierVectors
       if (isLE) {
          // for LE, we first index by 4*4=16 bytes for the highest powers, then we index by
          // the value of tempReg
@@ -10697,6 +10697,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          // for BE, we will index all the way to the back of the array, subtract by the value
          // of tempReg, then subtract by an additional 16 bytes for the 4 padded zeros, and then
          // index backward by 16 bytes to make sure the value we want is in word[3]
+
          // tempReg = -tempReg - 1, so we should add the one back later
          generateTrg1Src2Instruction(cg, TR::InstOpCode::nor, node, tempReg, tempReg, tempReg);
          switch (elementType)
@@ -10934,10 +10935,10 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // Head of the serialLabel
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialLabel);
 
-#define UNROLL_FACTOR 4
-   // vendReg = endReg - [(unroll_factor - 1) * elementSize]
+   const int unrollFactor = 4;
+   // vendReg = endReg - [(unrollFactor - 1) * elementSize]
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node,
-      vendReg, endReg, (UNROLL_FACTOR-1) * -1 * TR::DataType::getSize(elementType));
+      vendReg, endReg, (unrollFactor-1) * TR::DataType::getSize(elementType) * -1);
 
    // --- unrolled loop
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialUnrollLabel);
@@ -10947,7 +10948,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // hash = hash + temp
    generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp8, node, condReg, valueReg, vendReg);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, serialLoopLabel, condReg);
-   for (int i = 0; i < UNROLL_FACTOR; i++)
+   for (int i = 0; i < unrollFactor; i++)
       {
       generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, tempReg, hashReg, 5, 0xFFFFFFFFFFFFFFE0);
       generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, hashReg, hashReg, tempReg);
@@ -10971,7 +10972,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          }
       generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, hashReg, tempReg);
       }
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, valueReg, valueReg, TR::DataType::getSize(elementType) * UNROLL_FACTOR);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, valueReg, valueReg, TR::DataType::getSize(elementType) * unrollFactor);
    generateLabelInstruction(cg, TR::InstOpCode::b, node, serialUnrollLabel);
 
 
@@ -11089,7 +11090,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // End of this method
    TR::RegisterDependencyConditions *dependencies =
       new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0,
-         (TR::Int8 == elementType ? 19 : (TR::Int16 == elementType ? 16 : 14)), // extra vector regs
+         (TR::Int8 == elementType ? 18 : (TR::Int16 == elementType ? 15 : 14)) + // accumulators
+            (!isSigned && TR::Int32 != elementType), // vunpackMaskReg
          cg->trMemory());
 
    dependencies->addPostCondition(valueReg, TR::RealRegister::NoReg);
