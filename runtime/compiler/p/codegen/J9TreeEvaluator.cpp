@@ -10525,8 +10525,6 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 1*TR::DataType::getSize(elementType));
    generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, special1Label, condReg);
    */
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 2*TR::DataType::getSize(elementType));
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, special2Label, condReg);
 
    // using the serial loop is faster if there are less than 16 items
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 16*TR::DataType::getSize(elementType));
@@ -10884,6 +10882,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
 
    // POST_VSX:
    generateLabelInstruction(cg, TR::InstOpCode::label, node, POSTVSXLabel);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, vendReg, valueReg, endReg);
 
    // shift the high/low registers
    switch (elementType)
@@ -10933,10 +10932,12 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, low4Reg, vconstant0Reg, 8);
    generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrwz, node, hashReg, vtmp1Reg);
 
-
    // Head of the serialLabel
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialLabel);
 
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, vendReg, 2*TR::DataType::getSize(elementType));
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, special2Label, condReg);
+	
    const int unrollFactor = 4;
    // vendReg = endReg - [(unrollFactor - 1) * elementSize]
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node,
@@ -11041,11 +11042,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    */
    // 2: do it twice
    generateLabelInstruction(cg, TR::InstOpCode::label, node, special2Label);
-   if (nonZeroInitial)
-      {
       generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, tempReg, hashReg, 5, 0xFFFFFFFFFFFFFFE0);
       generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, hashReg, hashReg, tempReg);
-      }
    switch (elementType)
       {
       case TR::Int8:
