@@ -10528,7 +10528,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
                                                 29791, 961, 31, 1};
    static uint32_t multiplierVectors_le[8] = {923521, 923521, 923521, 923521,
                                                 1, 31, 961, 29791};
-   intptr_t multiplierVector = (isLE ?  multiplierVectors_le : multiplierVectors_be);
+   intptr_t multiplierVector = (intptr_t) (isLE ?  multiplierVectors_le : multiplierVectors_be);
 
    // clear accumulator register
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vxor, node, tallyReg, tallyReg, tallyReg);
@@ -10552,7 +10552,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       if (isLE) // in LE, load into the highest word
          {
          generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, tallyReg, hashReg);
-         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, tallyReg, vconstant0Reg, initialValueReg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, tallyReg, vconstant0Reg, tallyReg, 8);
          generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, tallyReg, tallyReg, vconstant0Reg, 12);
          }
       else // in BE, load into the lowest word
@@ -10622,12 +10622,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
             TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
          }
       // make it so that tempReg point it to the appropriate word in the multiplierVectors
-      if (isLE) {
-         // for LE, we index by the value of tempReg
-         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 16);
-      } else {
-         // for BE, we walk back by 3*4=12 bytes to load it in the lowest word
-         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, 16-12);
+      if (!isLE) { // for BE, we walk back by 3*4=12 bytes to load it in the lowest word
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, -12);
       }
 
       // move the value into a temporary register
@@ -10648,15 +10644,15 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    switch (elementType)
       {
       case TR::Int8: // unpack into halfwords, then words
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsb, node, vtmp3Reg, vtmp1Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupklsb : TR::InstOpCode::vupkhsb, node, vtmp3Reg, vtmp1Reg);
          // byte 0-3
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, tallyReg, vtmp3Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupklsh : TR::InstOpCode::vupkhsh, node, tallyReg, vtmp3Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, tallyReg, tallyReg, vunpackMaskReg);
             }
          // byte 4-7
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, vtmp3Reg, vtmp3Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsh : TR::InstOpCode::vupklsh, node, vtmp3Reg, vtmp3Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp3Reg, vtmp3Reg, vunpackMaskReg);
@@ -10664,8 +10660,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp3Reg);
          // byte 8-15
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsb, node, vtmp3Reg, vtmp1Reg);
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, vtmp3Reg, vtmp3Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsb : TR::InstOpCode::vupklsb, node, vtmp3Reg, vtmp1Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupklsh : TR::InstOpCode::vupkhsh, node, vtmp3Reg, vtmp3Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp3Reg, vtmp3Reg, vunpackMaskReg);
@@ -10673,28 +10669,28 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp3Reg);
          // we must unpack again to vtmp3 since we are running out of registers
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsb, node, vtmp3Reg, vtmp1Reg);
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, low4Reg, vtmp3Reg);
-         if (!isSigned)
-            {
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, low4Reg, low4Reg, vunpackMaskReg);
-            }
-         generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
-         generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp3Reg);
-         break;
-      case TR::Int16:
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, tallyReg, vtmp1Reg);
-         if (!isSigned)
-            {
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, tallyReg, tallyReg, vunpackMaskReg);
-            }
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, vtmp3Reg, vtmp1Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsb : TR::InstOpCode::vupklsb, node, vtmp3Reg, vtmp1Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsh : TR::InstOpCode::vupklsh, node, vtmp3Reg, vtmp3Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp3Reg, vtmp3Reg, vunpackMaskReg);
             }
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp3Reg);
+         break;
+      case TR::Int16:
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupklsh : TR::InstOpCode::vupkhsh, node, tallyReg, vtmp1Reg);
+         if (!isSigned)
+            {
+            generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, tallyReg, tallyReg, vunpackMaskReg);
+            }
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsh : TR::InstOpCode::vupklsh, node, vtmp1Reg, vtmp1Reg);
+         if (!isSigned)
+            {
+            generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp1Reg, vtmp1Reg, vunpackMaskReg);
+            }
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp1Reg);
          break;
       case TR::Int32:
          // no unpacking required, but we do need to move if we haven't due to nonZeroInitial
@@ -10738,17 +10734,17 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    switch (elementType)
       {
       case TR::Int8:
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsb, node, vtmp2Reg, vtmp1Reg);
-         // fourth4
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, vtmp3Reg, vtmp2Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupklsb : TR::InstOpCode::vupkhsb, node, vtmp2Reg, vtmp1Reg);
+         // byte 0 - 3
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupklsh : TR::InstOpCode::vupkhsh, node, vtmp3Reg, vtmp2Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp3Reg, vtmp3Reg, vunpackMaskReg);
             }
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp3Reg);
-         // third4
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, vtmp3Reg, vtmp2Reg);
+         // byte 4 - 7
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsh : TR::InstOpCode::vupklsh, node, vtmp3Reg, vtmp2Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp3Reg, vtmp3Reg, vunpackMaskReg);
@@ -10756,17 +10752,17 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp3Reg);
 
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsb, node, vtmp2Reg, vtmp1Reg);
-         // high4
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, vtmp3Reg, vtmp2Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsb : TR::InstOpCode::vupklsb, node, vtmp2Reg, vtmp1Reg);
+         // byte 8 - 11
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupklsh : TR::InstOpCode::vupkhsh, node, vtmp3Reg, vtmp2Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp3Reg, vtmp3Reg, vunpackMaskReg);
             }
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp3Reg);
-         // low4
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, vtmp3Reg, vtmp2Reg);
+         // byte 12 - 15
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsh : TR::InstOpCode::vupklsh, node, vtmp3Reg, vtmp2Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp3Reg, vtmp3Reg, vunpackMaskReg);
@@ -10776,7 +10772,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          break;
       case TR::Int16:
          // high4
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupkhsh, node, vtmp2Reg, vtmp1Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupklsh : TR::InstOpCode::vupkhsh, node, vtmp2Reg, vtmp1Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp2Reg, vtmp2Reg, vunpackMaskReg);
@@ -10784,7 +10780,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, tallyReg, tallyReg, multiplierReg);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vadduwm, node, tallyReg, tallyReg, vtmp2Reg);
          // low4
-         generateTrg1Src1Instruction(cg, TR::InstOpCode::vupklsh, node, vtmp2Reg, vtmp1Reg);
+         generateTrg1Src1Instruction(cg, isLE ? TR::InstOpCode::vupkhsh : TR::InstOpCode::vupklsh, node, vtmp2Reg, vtmp1Reg);
          if (!isSigned)
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::vand, node, vtmp2Reg, vtmp2Reg, vunpackMaskReg);
@@ -10953,7 +10949,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // End of this method
    TR::RegisterDependencyConditions *dependencies =
       new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0,
-         14 + (!isSigned && TR::Int32 != elementType), // vunpackMaskReg
+         14 + (!isSigned && TR::Int32 != elementType) + (TR::Int8==elementType), // vunpackMaskReg
          cg->trMemory());
 
    dependencies->addPostCondition(valueReg, TR::RealRegister::NoReg);
@@ -10979,6 +10975,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    switch (elementType)
       {
       case TR::Int8:
+         dependencies->addPostCondition(vtmp3Reg, TR::RealRegister::NoReg);
          // fall through
       case TR::Int16:
          if (!isSigned)
@@ -11013,16 +11010,13 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    cg->stopUsingRegister(vconstant0Reg);
    cg->stopUsingRegister(vconstantNegReg);
 
-   cg->stopUsingRegister(low4Reg);
+   cg->stopUsingRegister(tallyReg);
    switch (elementType)
       {
       case TR::Int8:
          cg->stopUsingRegister(vtmp3Reg);
-         cg->stopUsingRegister(third4Reg);
-         cg->stopUsingRegister(fourth4Reg);
          // fall through
       case TR::Int16:
-         cg->stopUsingRegister(high4Reg);
          if (!isSigned)
             cg->stopUsingRegister(vunpackMaskReg);
          // fall through
