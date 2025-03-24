@@ -10527,7 +10527,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       default:
          TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
       }
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrws, node, multiplierReg, tempReg);
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltw, node, multiplierReg, multiplierReg, 1);
 
    // clear accumulator registers
    switch (elementType)
