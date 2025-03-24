@@ -10511,49 +10511,23 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, serialLabel, condReg);
 
    // load multiplier (anything with more than 4 bytes can be truncated)
-   // 31^0-6 = 1 31 961 29791 923521 28629151 887503681
-   // 31^7 = 667E12CDF           31^8 = C694446F01         31^9 = 180BF449711F 31^10 = 2E97294E4B2C1
-   // 31^11 = 5A44E007B1A55F     31^12 = AEE5720EE830681     31^13 = 152DC8CFCE1DDC99F
-   // 31^14 = 2908B5129F59DB6A41 31^15 = 4F80DED414BE191DDDF 31^16 = 9A09AFBAE83050A9DE01
-   static uint32_t multiplierVectors8[20] = {0x50A9DE01, 0x50A9DE01, 0x50A9DE01, 0x50A9DE01,
-      0xE191DDDF, 0x59DB6A41, 0xE1DDC99F, 0xEE830681, 0x07B1A55F, 0x94E4B2C1, 0xF449711F, 0x94446F01,
-      0x67E12CDF, 887503681, 28629151, 923521, 29791, 961, 31, 1};
-   static uint32_t multiplierVectors16[12] = {0x94446F01, 0x94446F01, 0x94446F01, 0x94446F01,
-      0x67E12CDF, 887503681, 28629151, 923521, 29791, 961, 31, 1};
-   static uint32_t multiplierVectors32[8] = {923521, 923521, 923521, 923521,
-                                               29791, 961, 31, 1};
-   uint32_t *multiplierVector;
-   int mvSize; // multiplierVector's size
+
+   // splat the multiplier value, with anything more than 4 bytes truncated
    switch (elementType)
       {
-      case TR::Int8:
-         multiplierVector = (multiplierVectors8);
-         mvSize = 20;
+      case TR::Int8: // 31^16 = 9A09AFBAE83050A9DE01
+         loadConstant(cg, node, (int32_t) 0x50A9DE01, tempReg);
          break;
-      case TR::Int16:
-         multiplierVector = (multiplierVectors16);
-         mvSize = 12;
+      case TR::Int16: // 31^8 = C694446F01
+         loadConstant(cg, node, (int32_t) 0x94446F01, tempReg);
          break;
-      case TR::Int32:
-         multiplierVector = (multiplierVectors32);
-         mvSize = 8;
+      case TR::Int32: // 31^4 = 923521
+         loadConstant(cg, node, (int32_t) 923521, tempReg);
          break;
       default:
          TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
       }
-
-   // use a similar concept the the TableOfConstants to load the multiplierPtr into the memory
-   // TOC uses relocation data, so we use the same here
-   uint32_t *multiplierPtr = (uint32_t*) fej9->allocateRelocationData(comp, mvSize * sizeof(uint32_t));
-   if (!multiplierPtr)
-      return NULL;
-   memcpy((void *) multiplierPtr, (void *) multiplierVector, mvSize * sizeof(uint32_t));
-
-   // point to the beginning of the array
-   loadAddressConstant(cg, false, node, (intptr_t) multiplierPtr, multiplierAddrReg);
-   // load the multiplierReg
-   generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
-      TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrws, node, multiplierReg, tempReg);
 
    // clear accumulator registers
    switch (elementType)
@@ -10698,25 +10672,103 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // now that we don't need vendReg, use it to store the number of remaining elements
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, vendReg, valueReg, endReg);
 
-   // shift the high/low registers
+   // multiply each word in the register by 31^n
+   // increasing from the lowest word in the lowest register where n=0
+   // 31^0-6 = 1 31 961 29791 923521 28629151 887503681
+   // 31^7 = 667E12CDF           31^8 = C694446F01         31^9 = 180BF449711F 31^10 = 2E97294E4B2C1
+   // 31^11 = 5A44E007B1A55F     31^12 = AEE5720EE830681     31^13 = 152DC8CFCE1DDC99F
+   // 31^14 = 2908B5129F59DB6A41 31^15 = 4F80DED414BE191DDDF 31^16 = 9A09AFBAE83050A9DE01
    switch (elementType)
       {
       case TR::Int8:
-         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, multiplierAddrReg, multiplierAddrReg, 0x10);
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg, TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
+         // fourth4Reg: 31^15-12
+         loadConstant(cg, node, (int32_t) 0xE191DDDF, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
+         loadConstant(cg, node, (int32_t) 0x59DB6A41, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
+         loadConstant(cg, node, (int32_t) 0xE1DDC99F, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
+         loadConstant(cg, node, (int32_t) 0xEE830681, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
+
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, fourth4Reg, fourth4Reg, multiplierReg);
-         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, multiplierAddrReg, multiplierAddrReg, 0x10);
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg, TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
+
+         // third4Reg: 31^11-8
+         loadConstant(cg, node, (int32_t) 0x07B1A55F, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
+         loadConstant(cg, node, (int32_t) 0x94E4B2C1, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
+         loadConstant(cg, node, (int32_t) 0xF449711F, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
+         loadConstant(cg, node, (int32_t) 0x94446F01, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
+
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, third4Reg, third4Reg, multiplierReg);
          // fall through
       case TR::Int16:
-         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, multiplierAddrReg, multiplierAddrReg, 0x10);
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg, TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
+         // high4Reg: 31^7-4
+         loadConstant(cg, node, (int32_t) 0x67E12CDF, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
+         loadConstant(cg, node, (int32_t) 887503681, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
+         loadConstant(cg, node, (int32_t) 28629151, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
+         loadConstant(cg, node, (int32_t) 923521, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
+
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, high4Reg, high4Reg, multiplierReg);
          // fall through
       case TR::Int32:
-         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, multiplierAddrReg, multiplierAddrReg, 0x10);
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg, TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
+         // low4Reg: 31^3-0
+         loadConstant(cg, node, (int32_t) 29791, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
+         loadConstant(cg, node, (int32_t) 961, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
+         loadConstant(cg, node, (int32_t) 31, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
+         loadConstant(cg, node, (int32_t) 1, tempReg);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
+
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, low4Reg, low4Reg, multiplierReg);
          break;
       default:
