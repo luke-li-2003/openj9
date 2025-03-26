@@ -10731,133 +10731,94 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // 31^7 = 667E12CDF           31^8 = C694446F01         31^9 = 180BF449711F 31^10 = 2E97294E4B2C1
    // 31^11 = 5A44E007B1A55F     31^12 = AEE5720EE830681     31^13 = 152DC8CFCE1DDC99F
    // 31^14 = 2908B5129F59DB6A41 31^15 = 4F80DED414BE191DDDF 31^16 = 9A09AFBAE83050A9DE01
+
+   // if we are generating relocatable code we must load all the values as immediates
+   if (generateRelocatableCode)
+      {
+      // first, multiply the higher registers with 31^4, 31^8, and 31^12 respectively
+      switch (elementType)
+         {
+         case TR::Int8:
+            loadConstant(cg, node, (int32_t) 0xEE830681, tempReg); // 31^12
+            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltw, node, multiplierReg, multiplierReg, 1);
+            generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, fourth4Reg, fourth4Reg, multiplierReg);
+            loadConstant(cg, node, (int32_t) 0x94446F01, tempReg); // 31^8
+            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltw, node, multiplierReg, multiplierReg, 1);
+            generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, third4Reg, third4Reg, multiplierReg);
+            // fall through
+         case TR::Int16:
+            loadConstant(cg, node, (int32_t) 923521, tempReg); // 31^4
+            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+            generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltw, node, multiplierReg, multiplierReg, 1);
+            generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, high4Reg, high4Reg, multiplierReg);
+            // fall through
+         case TR::Int32:
+            // do nothing
+            break;
+         default: TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
+         }
+      // then, get 31^3 - 31^0 into the multiplierReg
+      loadConstant(cg, node, (int32_t) 0x29791, tempReg);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
+      loadConstant(cg, node, (int32_t) 0x961, tempReg);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
+      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
+      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
+      loadConstant(cg, node, (int32_t) 0x31, tempReg);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
+      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
+      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
+      loadConstant(cg, node, (int32_t) 0x1, tempReg);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
+      generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
+      }
+
    switch (elementType)
       {
       case TR::Int8:
-         if (generateRelocatableCode)
-            {
-            // fourth4Reg: 31^15-12
-            loadConstant(cg, node, (int32_t) 0xE191DDDF, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
-            loadConstant(cg, node, (int32_t) 0x59DB6A41, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
-            loadConstant(cg, node, (int32_t) 0xE1DDC99F, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
-            loadConstant(cg, node, (int32_t) 0xEE830681, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
-            }
-         else
+         // fourth4Reg: 31^15-12
+         if (!generateRelocatableCode)
             {
             generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, multiplierAddrReg, multiplierAddrReg, 0x10);
             generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
             }
-
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, fourth4Reg, fourth4Reg, multiplierReg);
 
          // third4Reg: 31^11-8
-         if (generateRelocatableCode)
-            {
-            loadConstant(cg, node, (int32_t) 0x07B1A55F, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
-            loadConstant(cg, node, (int32_t) 0x94E4B2C1, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
-            loadConstant(cg, node, (int32_t) 0xF449711F, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
-            loadConstant(cg, node, (int32_t) 0x94446F01, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
-            }
-         else
+         if (!generateRelocatableCode)
             {
             generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, multiplierAddrReg, multiplierAddrReg, 0x10);
             generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
             }
-
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, third4Reg, third4Reg, multiplierReg);
          // fall through
       case TR::Int16:
          // high4Reg: 31^7-4
-         if (generateRelocatableCode)
-            {
-            loadConstant(cg, node, (int32_t) 0x67E12CDF, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
-            loadConstant(cg, node, (int32_t) 887503681, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
-            loadConstant(cg, node, (int32_t) 28629151, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
-            loadConstant(cg, node, (int32_t) 923521, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
-            }
-         else
+         if (!generateRelocatableCode)
             {
             generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, multiplierAddrReg, multiplierAddrReg, 0x10);
             generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
             }
-
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, high4Reg, high4Reg, multiplierReg);
          // fall through
       case TR::Int32:
          // low4Reg: 31^3-0
-         if (generateRelocatableCode)
-            {
-            loadConstant(cg, node, (int32_t) 29791, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
-            loadConstant(cg, node, (int32_t) 961, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
-            loadConstant(cg, node, (int32_t) 31, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
-            loadConstant(cg, node, (int32_t) 1, tempReg);
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
-            generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
-            generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp2Reg);
-            }
-         else
+         if (!generateRelocatableCode)
             {
             generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, multiplierAddrReg, multiplierAddrReg, 0x10);
             generateTrg1MemInstruction(cg, TR::InstOpCode::lxvw4x, node, multiplierReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, multiplierAddrReg, 16));
             }
-
          generateTrg1Src2Instruction(cg, TR::InstOpCode::vmuluwm, node, low4Reg, low4Reg, multiplierReg);
          break;
       default:
