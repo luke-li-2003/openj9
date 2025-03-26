@@ -10760,20 +10760,20 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
          default: TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
          }
       // then, get 31^3 - 31^0 into the multiplierReg
-      loadConstant(cg, node, (int32_t) 0x29791, tempReg);
+      loadConstant(cg, node, (int32_t) 29791, tempReg);
       generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 12);
-      loadConstant(cg, node, (int32_t) 0x961, tempReg);
+      loadConstant(cg, node, (int32_t) 961, tempReg);
       generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp2Reg, tempReg);
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vconstant0Reg, vtmp2Reg, 8);
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp2Reg, vtmp2Reg, vconstant0Reg, 8);
       generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, vtmp2Reg, vtmp1Reg, vtmp2Reg);
-      loadConstant(cg, node, (int32_t) 0x31, tempReg);
+      loadConstant(cg, node, (int32_t) 31, tempReg);
       generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, vtmp1Reg, tempReg);
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vconstant0Reg, vtmp1Reg, 8);
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, vtmp1Reg, vtmp1Reg, vconstant0Reg, 4);
-      loadConstant(cg, node, (int32_t) 0x1, tempReg);
+      loadConstant(cg, node, (int32_t) 1, tempReg);
       generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, multiplierReg, tempReg);
       generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::vsldoi, node, multiplierReg, vconstant0Reg, multiplierReg, 8);
       generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, node, multiplierReg, multiplierReg, vtmp1Reg);
