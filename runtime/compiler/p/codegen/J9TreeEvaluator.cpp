@@ -11847,8 +11847,12 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
    deps->getPostConditions()->getRegisterDependency(deps->getAddCursorForPost() - 1)->setExcludeGPR0();
 
    deps->addPostCondition(indexReg, TR::RealRegister::NoReg);
+   deps->getPostConditions()->getRegisterDependency(deps->getAddCursorForPost() - 1)->setExcludeGPR0();
+
    deps->addPostCondition(lengthReg, TR::RealRegister::NoReg);
    deps->addPostCondition(tempReg, TR::RealRegister::NoReg);
+   deps->getPostConditions()->getRegisterDependency(deps->getAddCursorForPost() - 1)->setExcludeGPR0();
+
    deps->addPostCondition(cr6, TR::RealRegister::cr6);
    deps->addPostCondition(vconstant0Reg, TR::RealRegister::NoReg);
    deps->addPostCondition(vtmp1Reg, TR::RealRegister::NoReg);
