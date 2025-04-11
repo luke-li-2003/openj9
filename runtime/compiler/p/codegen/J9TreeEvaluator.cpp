@@ -10935,7 +10935,7 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    TR_ASSERT_FATAL(isCountPositives && isLatin1, "countPositives only works with byte arrays!\n");
 
    auto scalarCompareOp = isCountPositives ? TR::InstOpCode::blt : TR::InstOpCode::beq;
-   auto vectorCompareOp = isCountPositives ? TR::InstOpCode::vcmpltsb_r :
+   auto vectorCompareOp = isCountPositives ? TR::InstOpCode::vcmpgtsb_r :
       (isLatin1 ? TR::InstOpCode::vcmpequb_r : TR::InstOpCode::vcmpequh_r);
    auto scalarLoadOp = isLatin1 ? TR::InstOpCode::lbzx : TR::InstOpCode::lhzx;
 
@@ -11133,7 +11133,7 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
       // Now the search vector is ready for comparison: none of the garbage can compare as equal to
       // our target value and the start of the vector is now aligned to the start of the string. So
       // we can now perform the comparison as normal.
-      generateTrg1Src2Instruction(cg, vectorCompareOp, node, searchVector, searchVector, targetVector);
+      generateTrg1Src2Instruction(cg, vectorCompareOp, node, searchVector, targetVector, searchVector);
       generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, foundLabel, cr6);
       generateLabelInstruction(cg, TR::InstOpCode::b, node, notFoundLabel);
       }
@@ -11169,7 +11169,7 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
 
    // Now our vector is ready for comparison: no garbage can match the target value and the start of
    // the vector is now aligned to the start of the string.
-   generateTrg1Src2Instruction(cg, vectorCompareOp, node, searchVector, searchVector, targetVector);
+   generateTrg1Src2Instruction(cg, vectorCompareOp, node, searchVector, targetVector, searchVector);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, foundLabel, cr6);
 
    // If the first vector didn't match, then we can slide right into the standard vectorized loop.
@@ -11182,7 +11182,7 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    // This is the heart of the vectorized loop, working just like any standard vectorized loop.
    generateLabelInstruction(cg, TR::InstOpCode::label, node, vectorLoopLabel);
    generateTrg1MemInstruction(cg, TR::InstOpCode::lvx, node, searchVector, TR::MemoryReference::createWithIndexReg(cg, zeroRegister, currentAddress, 16));
-   generateTrg1Src2Instruction(cg, vectorCompareOp, node, searchVector, searchVector, targetVector);
+   generateTrg1Src2Instruction(cg, vectorCompareOp, node, searchVector, targetVector, searchVector);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, foundLabel, cr6);
 
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, currentAddress, currentAddress, 0x10);
@@ -11227,7 +11227,7 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    srm->reclaimScratchRegister(shiftAmount);
 
    // Now we run our comparison as normal
-   generateTrg1Src2Instruction(cg, vectorCompareOp, node, searchVector, searchVector, targetVector);
+   generateTrg1Src2Instruction(cg, vectorCompareOp, node, searchVector, targetVector, searchVector);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, foundLabel, cr6);
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, notFoundLabel);
