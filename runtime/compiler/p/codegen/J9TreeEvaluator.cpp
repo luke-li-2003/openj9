@@ -10923,28 +10923,46 @@ static TR::Register *inlineIntrinsicIndexOf_P10(TR::Node *node, TR::CodeGenerato
    return result;
    }
 
-static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *cg, bool isLatin1)
+static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *cg,
+                                            bool isLatin1, bool isCountPositives)
    {
    static bool disableIndexOfStringIntrinsic = feGetEnv("TR_DisableIndexOfStringIntrinsic") != NULL;
-   if (disableIndexOfStringIntrinsic)
+   static bool disableCountPositives = feGetEnv("TR_DisableCountPositvesIntrinsic") != NULL;
+   if ((disableIndexOfStringIntrinsic && !isCountPositives) || (disableCountPositives && isCountPositives))
       return nullptr;
    TR::Compilation *comp = cg->comp();
-   auto vectorCompareOp = isLatin1 ? TR::InstOpCode::vcmpequb_r : TR::InstOpCode::vcmpequh_r;
+
+   TR_ASSERT_FATAL(isCountPositives && isLatin1, "countPositives only works with byte arrays!\n");
+
+   auto scalarCompareOp = isCountPositives ? TR::InstOpCode::blt : TR::InstOpCode::beq;
+   auto vectorCompareOp = isCountPositives ? TR::InstOpCode::vcmpltsb_r :
+      (isLatin1 ? TR::InstOpCode::vcmpequb_r : TR::InstOpCode::vcmpequh_r);
    auto scalarLoadOp = isLatin1 ? TR::InstOpCode::lbzx : TR::InstOpCode::lhzx;
 
    // This evaluator function handles different indexOf() intrinsics, some of which are static calls without a
    // receiver. Hence, the need for static call check.
    const bool isStaticCall = node->getSymbolReference()->getSymbol()->castToMethodSymbol()->isStatic();
-   const uint8_t firstCallArgIdx = isStaticCall ? 0 : 1;
+   const uint8_t firstCallArgIdx = isCountPositives ? 0 : (isStaticCall ? 0 : 1);
    TR::Register *array = cg->evaluate(node->getChild(firstCallArgIdx));
-   TR::Register *ch = cg->evaluate(node->getChild(firstCallArgIdx+1));
-   TR::Register *offset = cg->evaluate(node->getChild(firstCallArgIdx+2));
-   TR::Register *length = cg->gprClobberEvaluate(node->getChild(firstCallArgIdx+3));
+
+   TR::Register *ch ;
+   if (!isCountPositives)
+      {
+      ch = cg->evaluate(node->getChild(firstCallArgIdx+1));
+      }
+
+   const uint8_t offsetIdx = isCountPositives ? 1 : firstCallArgIdx + 2;
+   TR::Register *offset = cg->evaluate(node->getChild(offsetIdx));
+
+   const uint8_t lenIdx = isCountPositives ? 2 : firstCallArgIdx + 3;
+   TR::Register *length = cg->gprClobberEvaluate(node->getChild(lenIdx));
 
    TR::Register *cr0 = cg->allocateRegister(TR_CCR);
    TR::Register *cr6 = cg->allocateRegister(TR_CCR);
 
    TR::Register *zeroRegister = cg->allocateRegister();
+   if (isCountPositives)
+      ch = zeroRegister;
    TR::Register *result = cg->allocateRegister();
    TR::Register *arrAddress = cg->allocateRegister();
    TR::Register *currentAddress = cg->allocateRegister();
@@ -10986,9 +11004,9 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
       generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, endAddress, endAddress, endAddress);
       }
 
-   if (node->getChild(firstCallArgIdx+2)->getReferenceCount() == 1)
+   if (node->getChild(firstCallArgIdx+2)->getReferenceCount() == 1 && !isCountPositives)
       srm->donateScratchRegister(offset);
-   if (node->getChild(firstCallArgIdx+3)->getReferenceCount() == 1)
+   if (node->getChild(firstCallArgIdx+3)->getReferenceCount() == 1 && !isCountPositives)
       srm->donateScratchRegister(length);
 
    /*
@@ -11024,11 +11042,16 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
 
       // Since we're going to do a load followed immediately by a comparison, we need to ensure that
       // the target scalar is zero-extended and *not* sign-extended.
-      generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, zxTargetScalar, ch, 0, isLatin1 ? 0xff : 0xffff);
+      if (isCountPositives)
+         generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, zxTargetScalar, 0);
+      else
+         generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, zxTargetScalar, ch, 0,
+            isLatin1 ? 0xff : 0xffff);
 
-      generateTrg1MemInstruction(cg, scalarLoadOp, node, value, TR::MemoryReference::createWithIndexReg(cg, result, arrAddress, isLatin1 ? 1 : 2));
+      generateTrg1MemInstruction(cg, scalarLoadOp, node, value,
+         TR::MemoryReference::createWithIndexReg(cg, result, arrAddress, isLatin1 ? 1 : 2));
       generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr0, value, zxTargetScalar);
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, foundExactLabel, cr0);
+      generateConditionalBranchInstruction(cg, scalarCompareOp, node, foundExactLabel, cr0);
 
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, result, result, isLatin1 ? 1 : 2);
       generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp8, node, cr0, result, endAddress);
@@ -11211,7 +11234,10 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
 
    // We've looked through the entire string and didn't find our target character, so return the
    // sentinel value -1
-   generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, result, -1);
+   if (isCountPositives)
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, node, result, length);
+   else
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, result, -1);
    generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, foundLabel);
@@ -11252,6 +11278,11 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, result, result, currentAddress);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, result, arrAddress, result);
 
+   if (isCountPositives)
+      {
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, result, offset, result);
+      }
+
    generateLabelInstruction(cg, TR::InstOpCode::label, node, foundExactLabel);
    if (!isLatin1)
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, result, result, 1);
@@ -11263,11 +11294,11 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
       deps->addPostCondition(array, TR::RealRegister::NoReg);
       deps->getPostConditions()->getRegisterDependency(deps->getAddCursorForPost() - 1)->setExcludeGPR0();
       }
-   if (node->getChild(firstCallArgIdx+1)->getReferenceCount() != 1)
+   if (node->getChild(firstCallArgIdx+1)->getReferenceCount() != 1 && !isCountPositives)
       deps->addPostCondition(ch, TR::RealRegister::NoReg);
-   if (node->getChild(firstCallArgIdx+2)->getReferenceCount() != 1)
+   if (node->getChild(firstCallArgIdx+2)->getReferenceCount() != 1 || isCountPositives)
       deps->addPostCondition(offset, TR::RealRegister::NoReg);
-   if (node->getChild(firstCallArgIdx+3)->getReferenceCount() != 1)
+   if (node->getChild(firstCallArgIdx+3)->getReferenceCount() != 1 || isCountPositives)
       deps->addPostCondition(length, TR::RealRegister::NoReg);
 
    deps->addPostCondition(cr0, TR::RealRegister::cr0);
@@ -11692,6 +11723,7 @@ static bool inlineIntrinsicInflate(TR::Node *node, TR::CodeGenerator *cg)
 
    return true;
    }
+
 
 /*
  * Arraycopy evaluator needs a version of inlineArrayCopy that can be used inside internal control flow. For this version of inlineArrayCopy, registers must
@@ -12258,6 +12290,22 @@ J9::Power::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
                resultReg = nullptr;
                }
             return result;
+            }
+         break;
+
+      case TR::java_lang_StringCoding_hasNegatives:
+         break;
+         if (cg->getSupportsInlineStringCodingHasNegatives())
+            {
+            resultReg = inlineIntrinsicIndexOf(node, cg, true, true);
+            return true;
+            }
+         break;
+      case TR::java_lang_StringCoding_countPositives:
+         if (cg->getSupportsInlineStringCodingCountPositives())
+            {
+            resultReg = inlineIntrinsicIndexOf(node, cg, true, true);
+            return true;
             }
          break;
 
