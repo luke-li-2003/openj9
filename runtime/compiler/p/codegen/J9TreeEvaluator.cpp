@@ -10927,12 +10927,13 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
                                             bool isLatin1, bool isCountPositives)
    {
    static bool disableIndexOfStringIntrinsic = feGetEnv("TR_DisableIndexOfStringIntrinsic") != NULL;
-   static bool disableCountPositives = feGetEnv("TR_DisableCountPositvesIntrinsic") != NULL;
+   static bool disableCountPositives = feGetEnv("TR_DisableCountPositivesIntrinsic") != NULL;
    if ((disableIndexOfStringIntrinsic && !isCountPositives) || (disableCountPositives && isCountPositives))
       return nullptr;
    TR::Compilation *comp = cg->comp();
+   if (isCountPositives) printf("LLLK wth is going on?\n");
 
-   TR_ASSERT_FATAL(isCountPositives && isLatin1, "countPositives only works with byte arrays!\n");
+   TR_ASSERT_FATAL(!(isCountPositives && !isLatin1), "countPositives only works with byte arrays!\n");
 
    auto scalarCompareOp = isCountPositives ? TR::InstOpCode::blt : TR::InstOpCode::beq;
    auto vectorCompareOp = isCountPositives ? TR::InstOpCode::vcmpgtsb_r :
@@ -10992,6 +10993,9 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    // Special case for empty strings, which always return -1
    generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr0, offset, length);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, notFoundLabel, cr0);
+
+   if (isCountPositives)
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, length, offset, length);
 
    // IMPORTANT: The upper 32 bits of a 64-bit register containing an int are undefined. Since the
    // indices are being passed in as ints, we must ensure that their upper 32 bits are not garbage.
@@ -11069,13 +11073,20 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
 
    // Splat the value to be compared against and its bitwise complement into two vector registers
    // for later use
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, targetVector, ch);
-   if (node->getChild(firstCallArgIdx+1)->getReferenceCount() == 1)
-      srm->donateScratchRegister(ch);
-   if (isLatin1)
-      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltb, node, targetVector, targetVector, 7);
+   if (isCountPositives)
+      {
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vxor, node, targetVector, targetVector, targetVector);
+      }
    else
-      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vsplth, node, targetVector, targetVector, 3);
+      {
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mtvsrwz, node, targetVector, ch);
+      if (node->getChild(firstCallArgIdx+1)->getReferenceCount() == 1)
+         srm->donateScratchRegister(ch);
+      if (isLatin1)
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltb, node, targetVector, targetVector, 7);
+      else
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vsplth, node, targetVector, targetVector, 3);
+      }
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vnor, node, targetVectorNot, targetVector, targetVector);
 
    TR::Register *endVectorAddress = srm->findOrCreateScratchRegister();
@@ -11278,12 +11289,12 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, result, result, currentAddress);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, result, arrAddress, result);
 
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, foundExactLabel);
    if (isCountPositives)
       {
       generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, result, offset, result);
       }
 
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, foundExactLabel);
    if (!isLatin1)
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, result, result, 1);
 
@@ -11326,7 +11337,7 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
 
    node->setRegister(result);
 
-   if (!isStaticCall)
+   if (!isStaticCall && !isCountPositives)
       {
       cg->recursivelyDecReferenceCount(node->getChild(0));
       }
@@ -12276,7 +12287,7 @@ J9::Power::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
             if (comp->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P10))
                resultReg = inlineIntrinsicIndexOf_P10(node, cg, isLatin1);
             else
-               resultReg = inlineIntrinsicIndexOf(node, cg, isLatin1);
+               resultReg = inlineIntrinsicIndexOf(node, cg, isLatin1, false);
             return resultReg != nullptr;
             }
          break;
@@ -12298,14 +12309,15 @@ J9::Power::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
          if (cg->getSupportsInlineStringCodingHasNegatives())
             {
             resultReg = inlineIntrinsicIndexOf(node, cg, true, true);
-            return true;
+            return resultReg != nullptr;
             }
          break;
       case TR::java_lang_StringCoding_countPositives:
+         //break;
          if (cg->getSupportsInlineStringCodingCountPositives())
             {
             resultReg = inlineIntrinsicIndexOf(node, cg, true, true);
-            return true;
+            return resultReg != nullptr;
             }
          break;
 
