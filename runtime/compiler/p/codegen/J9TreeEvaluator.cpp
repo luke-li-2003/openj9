@@ -10990,28 +10990,38 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, startLabel);
 
-   // Special case for empty strings, which always return -1
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr0, offset, length);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, notFoundLabel, cr0);
-
-   if (isCountPositives)
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, length, offset, length);
-
-   // IMPORTANT: The upper 32 bits of a 64-bit register containing an int are undefined. Since the
-   // indices are being passed in as ints, we must ensure that their upper 32 bits are not garbage.
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::extsw, node, result, offset);
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::extsw, node, endAddress, length);
-
-   if (!isLatin1)
+   if (countPositives)
       {
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, result, result, result);
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, endAddress, endAddress, endAddress);
-      }
+      // check empty
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, cr0, length, 0);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::ble, node, notFoundLabel, cr0);
 
-   if (node->getChild(firstCallArgIdx+2)->getReferenceCount() == 1 && !isCountPositives)
-      srm->donateScratchRegister(offset);
-   if (node->getChild(firstCallArgIdx+3)->getReferenceCount() == 1 && !isCountPositives)
-      srm->donateScratchRegister(length);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, endAddress, length, offset);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::extsw, node, result, offset);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::extsw, node, endAddress, endAddress);
+      }
+   else
+      {
+      // Special case for empty strings, which always return -1
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr0, offset, length);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, notFoundLabel, cr0);
+
+      // IMPORTANT: The upper 32 bits of a 64-bit register containing an int are undefined. Since the
+      // indices are being passed in as ints, we must ensure that their upper 32 bits are not garbage.
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::extsw, node, result, offset);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::extsw, node, endAddress, length);
+
+      if (!isLatin1)
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, result, result, result);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, endAddress, endAddress, endAddress);
+         }
+
+      if (node->getChild(firstCallArgIdx+2)->getReferenceCount() == 1)
+         srm->donateScratchRegister(offset);
+      if (node->getChild(firstCallArgIdx+3)->getReferenceCount() == 1)
+         srm->donateScratchRegister(length);
+      }
 
    /*
     * Determine the address of the first byte to read either by loading from dataAddr or adding the header size.
