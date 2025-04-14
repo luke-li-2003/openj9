@@ -10931,7 +10931,6 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    if ((disableIndexOfStringIntrinsic && !isCountPositives) || (disableCountPositives && isCountPositives))
       return nullptr;
    TR::Compilation *comp = cg->comp();
-   if (isCountPositives) printf("LLLK wth is going on?\n");
 
    TR_ASSERT_FATAL(!(isCountPositives && !isLatin1), "countPositives only works with byte arrays!\n");
 
@@ -10970,7 +10969,7 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    TR::Register *endAddress = cg->allocateRegister();
 
    TR::Register *targetVector = cg->allocateRegister(TR_VRF);
-   TR::Register *targetVectorNot = cg->allocateRegister(TR_VRF);
+   TR::Register *targetVectorNot = isCountPositives ? targetVector : cg->allocateRegister(TR_VRF);
    TR::Register *searchVector = cg->allocateRegister(TR_VRF);
    TR::Register *permuteVector = cg->allocateRegister(TR_VRF);
 
@@ -10990,7 +10989,7 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, startLabel);
 
-   if (countPositives)
+   if (isCountPositives)
       {
       // check empty
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, cr0, length, 0);
@@ -11064,6 +11063,8 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
 
       generateTrg1MemInstruction(cg, scalarLoadOp, node, value,
          TR::MemoryReference::createWithIndexReg(cg, result, arrAddress, isLatin1 ? 1 : 2));
+      if (isCountPositives)
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, value, value);
       generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr0, value, zxTargetScalar);
       generateConditionalBranchInstruction(cg, scalarCompareOp, node, foundExactLabel, cr0);
 
@@ -11096,8 +11097,8 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
          generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vspltb, node, targetVector, targetVector, 7);
       else
          generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::vsplth, node, targetVector, targetVector, 3);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vnor, node, targetVectorNot, targetVector, targetVector);
       }
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::vnor, node, targetVectorNot, targetVector, targetVector);
 
    TR::Register *endVectorAddress = srm->findOrCreateScratchRegister();
    TR::Register *startVectorAddress = srm->findOrCreateScratchRegister();
@@ -11335,7 +11336,8 @@ static TR::Register *inlineIntrinsicIndexOf(TR::Node *node, TR::CodeGenerator *c
    deps->addPostCondition(endAddress, TR::RealRegister::NoReg);
 
    deps->addPostCondition(targetVector, TR::RealRegister::NoReg);
-   deps->addPostCondition(targetVectorNot, TR::RealRegister::NoReg);
+   if (!isCountPositives)
+      deps->addPostCondition(targetVectorNot, TR::RealRegister::NoReg);
    deps->addPostCondition(searchVector, TR::RealRegister::NoReg);
    deps->addPostCondition(permuteVector, TR::RealRegister::NoReg);
 
