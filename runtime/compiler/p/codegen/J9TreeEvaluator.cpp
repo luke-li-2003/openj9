@@ -10640,7 +10640,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
    // value += 2
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, valueReg, valueReg, 2*elementSize);
    // remainingLength -= 2
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, -2);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, -2*elementSize);
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, special01Label);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0);
