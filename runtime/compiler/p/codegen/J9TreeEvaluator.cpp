@@ -10475,9 +10475,8 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       generateTrg1Src2Instruction(cg, TR::InstOpCode::XOR, node, hashReg, hashReg, hashReg);
       }
 
-   TR::LabelSymbol *special1Label = generateLabelSymbol(cg); // for the length-1 special case
-   TR::LabelSymbol *special2Label = generateLabelSymbol(cg); // for the length-2 special case
-   TR::LabelSymbol *special3Label = generateLabelSymbol(cg); // for the length-3 special case
+   TR::LabelSymbol *special01Label = generateLabelSymbol(cg); // for the length-1 or 0 special case
+   TR::LabelSymbol *special23Label = generateLabelSymbol(cg); // for the length-2 or 3 special case
    TR::LabelSymbol *VSXLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *vectorLoopLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *serialLabel = generateLabelSymbol(cg);
@@ -10525,7 +10524,7 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       {
       // we have specialised code for cases with 3 or fewer elements
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 3*elementSize);
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::ble, node, special2Label, condReg);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::ble, node, special23Label, condReg);
 
       const int unrollFactor = 4, lgUnroll = 2;
       // get the number of times we are going the unroll loop
@@ -10584,168 +10583,94 @@ hashCodeHelper(TR::Node *node, TR::CodeGenerator *cg, TR::DataType elementType,
       }
 
    // special cases
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, special2Label);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 2*elementSize);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, special3Label, condReg);
-   // length 2
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, special23Label);
+   // length 2 or 3
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 1*elementSize);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::ble, node, special01Label, condReg);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::mulli, node, hashReg, hashReg, 961);
-   switch (elementType)
+   switch (elementType) // a[0]
       {
       case TR::Int8:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lbzx, node, tempReg,
+         generateTrg1MemInstruction(cg, TR::InstOpCode::lbzx, node, endReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 1));
          if (isSigned)
             {
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, tempReg, tempReg);
+            generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, endReg, endReg);
             }
          break;
       case TR::Int16:
-         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lhax : TR::InstOpCode::lhzx, node, tempReg,
+         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lhax : TR::InstOpCode::lhzx, node, endReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 2));
          break;
       case TR::Int32:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lwzx, node, tempReg,
+         generateTrg1MemInstruction(cg, TR::InstOpCode::lwzx, node, endReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 4));
          break;
       default:
          TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
       }
    // shift then subtract is slightly faster than mul 31; multiplierAddrReg should be free now
-   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, multiplierAddrReg, tempReg,
+   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, multiplierAddrReg, endReg,
          5, 0xFFFFFFFFFFFFFFE0);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, tempReg, tempReg, multiplierAddrReg);
-   switch (elementType)
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, endReg, endReg, multiplierAddrReg);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, endReg, hashReg);
+   switch (elementType) // a[1]
       {
       case TR::Int8:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lbz, node, endReg,
+         generateTrg1MemInstruction(cg, TR::InstOpCode::lbz, node, multiplierAddrReg,
                TR::MemoryReference::createWithDisplacement(cg, valueReg, 1, 1));
          if (isSigned)
             {
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, endReg, endReg);
+            generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, multiplierAddrReg, multiplierAddrReg);
             }
          break;
       case TR::Int16:
-         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lha : TR::InstOpCode::lhz, node, endReg,
+         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lha : TR::InstOpCode::lhz,
+               node, multiplierAddrReg,
                TR::MemoryReference::createWithDisplacement(cg, valueReg, 2, 2));
          break;
       case TR::Int32:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lwz, node, endReg,
+         generateTrg1MemInstruction(cg, TR::InstOpCode::lwz, node, multiplierAddrReg,
                TR::MemoryReference::createWithDisplacement(cg, valueReg, 4, 4));
          break;
       default:
          TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
       }
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, hashReg, tempReg);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, hashReg, endReg);
-   generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, multiplierAddrReg, hashReg);
+   // value += 2
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, valueReg, valueReg, 2*elementSize);
+   // remainingLength -= 2
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, tempReg, -2);
 
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, special3Label);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 1*elementSize);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, special1Label, condReg);
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, special01Label);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 0);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, endLabel, condReg);
-   // length 3
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::mulli, node, hashReg, hashReg, 29791);
-   switch (elementType)
+   // hashReg *= 31
+   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, tempReg, hashReg,
+         5, 0xFFFFFFFFFFFFFFE0);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, hashReg, hashReg, tempReg);
+   switch (elementType) // a[len-1]
       {
       case TR::Int8:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lbzx, node, tempReg,
+         generateTrg1MemInstruction(cg, TR::InstOpCode::lbzx, node, endReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 1));
-         if (isSigned)
-            {
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, tempReg, tempReg);
-            }
-         break;
-      case TR::Int16:
-         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lhax : TR::InstOpCode::lhzx, node, tempReg,
-               TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 2));
-         break;
-      case TR::Int32:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lwzx, node, tempReg,
-               TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 4));
-         break;
-      default:
-         TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
-      }
-   // multiplierAddrReg should be free now
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::mulli, node, multiplierAddrReg, tempReg, 961);
-   switch (elementType)
-      {
-      case TR::Int8:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lbz, node, tempReg,
-               TR::MemoryReference::createWithDisplacement(cg, valueReg, 1, 1));
-         if (isSigned)
-            {
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, tempReg, tempReg);
-            }
-         break;
-      case TR::Int16:
-         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lha : TR::InstOpCode::lhz, node, tempReg,
-               TR::MemoryReference::createWithDisplacement(cg, valueReg, 2, 2));
-         break;
-      case TR::Int32:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lwz, node, tempReg,
-               TR::MemoryReference::createWithDisplacement(cg, valueReg, 4, 4));
-         break;
-      default:
-         TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
-      }
-   // shift then subtract is slightly faster than mul 31
-   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, endReg, tempReg, 5, 0xFFFFFFFFFFFFFFE0);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, tempReg, tempReg, endReg);
-   switch (elementType)
-      {
-      case TR::Int8:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lbz, node, endReg,
-               TR::MemoryReference::createWithDisplacement(cg, valueReg, 2, 1));
          if (isSigned)
             {
             generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, endReg, endReg);
             }
          break;
       case TR::Int16:
-         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lha : TR::InstOpCode::lhz, node, endReg,
-               TR::MemoryReference::createWithDisplacement(cg, valueReg, 4, 2));
-         break;
-      case TR::Int32:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lwz, node, endReg,
-               TR::MemoryReference::createWithDisplacement(cg, valueReg, 8, 4));
-         break;
-      default:
-         TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
-      }
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, hashReg, multiplierAddrReg);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, hashReg, tempReg);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, hashReg, endReg);
-   generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
-
-   // length 1
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, special1Label);
-   // shift then subtract is slightly faster than mul 31
-   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, tempReg, hashReg, 5, 0xFFFFFFFFFFFFFFE0);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, hashReg, hashReg, tempReg);
-   switch (elementType)
-      {
-      case TR::Int8:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lbzx, node, tempReg,
-               TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 1));
-         if (isSigned)
-            {
-            generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, tempReg, tempReg);
-            }
-         break;
-      case TR::Int16:
-         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lhax : TR::InstOpCode::lhzx, node, tempReg,
+         generateTrg1MemInstruction(cg, isSigned ? TR::InstOpCode::lhax : TR::InstOpCode::lhzx, node, endReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 2));
          break;
       case TR::Int32:
-         generateTrg1MemInstruction(cg, TR::InstOpCode::lwzx, node, tempReg,
+         generateTrg1MemInstruction(cg, TR::InstOpCode::lwzx, node, endReg,
                TR::MemoryReference::createWithIndexReg(cg, NULL, valueReg, 4));
          break;
       default:
          TR_ASSERT_FATAL(false, "Unsupported hashCodeHelper elementType");
       }
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, hashReg, tempReg);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, hashReg, hashReg, endReg);
    generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, VSXLabel);
