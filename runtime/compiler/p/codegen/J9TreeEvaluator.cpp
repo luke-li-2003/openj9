@@ -1950,7 +1950,6 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
 
    TR::Register *firstDimLenReg = cg->allocateRegister();
    TR::Register *secondDimLenReg = cg->allocateRegister();
-   TR::Register *targetReg = cg->allocateRegister();
    TR::Register *temp1Reg = cg->allocateRegister();
    TR::Register *temp2Reg = cg->allocateRegister();
    TR::Register *temp3Reg = cg->allocateRegister();
@@ -1972,19 +1971,21 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
 
    startLabel->setStartInternalControlFlow();
    doneLabel->setEndInternalControlFlow();
-   generateLabelInstruction(TR::InstOpCode::label, node, startLabel, cg);
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, startLabel);
 
    // if the second dimension's length is not zero, we call the function to handle it
-   TR_OutlinedInstructions *outlinedHelperCall = new (cg->trHeapMemory())
-      TR_OutlinedInstructions(node, TR::acall, targetReg, oolFailLabel, endLabel, cg);
+   TR_PPCOutOfLineCodeSection *outlinedHelperCall = new (cg->trHeapMemory())
+      TR_PPCOutOfLineCodeSection(node, TR::acall, targetReg, oolFailLabel, doneLabel, cg);
    cg->getOutlinedInstructionsList().push_front(outlinedHelperCall);
 
-   generateLabelInstruction(TR::InstOpCode::JMP4, node, oolFailLabel, cg);
+   dimReg = cg->evaluate(secondChild);
+   dimsPtrReg = cg->evaluate(firstChild);
+   classReg = cg->evaluate(thirdChild);
 
    generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, temp1Reg, temp1Reg, 777, 0xFFF);
 
-   generateLabelInstruction(TR::InstOpCode::label, node, loopLabel, cg);
-   generateLabelInstruction(TR::InstOpCode::label, node, endLabel, cg);
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, loopLabel);
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, endLabel);
 
    cg->stopUsingRegister(dimsPtrReg);
    cg->stopUsingRegister(dimReg = cg);
@@ -1992,7 +1993,6 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    cg->stopUsingRegister(targetReg);
    cg->stopUsingRegister(firstDimLenReg);
    cg->stopUsingRegister(secondDimLenReg);
-   cg->stopUsingRegister(targetReg);
    cg->stopUsingRegister(temp1Reg);
    cg->stopUsingRegister(temp2Reg);
    cg->stopUsingRegister(temp3Reg);
