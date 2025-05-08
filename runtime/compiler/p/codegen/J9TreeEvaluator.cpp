@@ -1930,13 +1930,109 @@ TR::Register *J9::Power::TreeEvaluator::anewArrayEvaluator(TR::Node *node, TR::C
       return TR::TreeEvaluator::VMnewEvaluator(node, cg);
    }
 
+static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR::Compilation *comp = cg->comp();
+   TR_Debug *compDebug = comp->getDebug();
+   TR_ASSERT_FATAL(comp->target().is64Bit(), "multianewArrayEvaluator is only supported on 64-bit JVMs!");
+   TR_J9VMBase *fej9 = comp->fej9();
+
+   // ptr to array of sizes, one for each dimension
+   // array construction stops at the outermost zero size
+   TR::Register *dimsPtrReg = cg->evaluate(node->getFirstChild());
+   // number of dimensions - compile time constant
+   TR::Register *dimReg = cg->evaluate(node->getSecondChild());
+   // class pointer of objects in the array
+   TR::Register *classReg = cg->evaluate(node->getThirdChild());
+
+   // points to the resulting array allocated
+   TR::Register *targetReg = cg->allocateRegister();
+
+   TR::Register *firstDimLenReg = cg->allocateRegister();
+   TR::Register *secondDimLenReg = cg->allocateRegister();
+   TR::Register *targetReg = cg->allocateRegister();
+   TR::Register *temp1Reg = cg->allocateRegister();
+   TR::Register *temp2Reg = cg->allocateRegister();
+   TR::Register *temp3Reg = cg->allocateRegister();
+   TR::Register *componentClassReg = cg->allocateRegister();
+
+   TR::Register *vmThreadReg = cg->getVMThreadRegister();
+
+   TR::LabelSymbol *startLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *endLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *loopLabel = generateLabelSymbol(cg);
+
+   // out of line labels
+   TR::LabelSymbol *oolFailLabel = generateLabelSymbol(cg);
+   // oolJumpLabel is a common point that all branches will jump to.
+   // From this label, we branch to OOL code.
+   // We do this instead of jumping directly to OOL code from mainline
+   // because the RA can only handle the case where there's a single jump point to OOL code.
+   TR::LabelSymbol *oolJumpLabel = generateLabelSymbol(cg);
+
+   startLabel->setStartInternalControlFlow();
+   doneLabel->setEndInternalControlFlow();
+   generateLabelInstruction(TR::InstOpCode::label, node, startLabel, cg);
+
+   // if the second dimension's length is not zero, we call the function to handle it
+   TR_OutlinedInstructions *outlinedHelperCall = new (cg->trHeapMemory())
+      TR_OutlinedInstructions(node, TR::acall, targetReg, oolFailLabel, endLabel, cg);
+   cg->getOutlinedInstructionsList().push_front(outlinedHelperCall);
+
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, oolFailLabel, cg);
+
+   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, temp1Reg, temp1Reg, 777, 0xFFF);
+
+   generateLabelInstruction(TR::InstOpCode::label, node, loopLabel, cg);
+   generateLabelInstruction(TR::InstOpCode::label, node, endLabel, cg);
+
+   cg->stopUsingRegister(dimsPtrReg);
+   cg->stopUsingRegister(dimReg = cg);
+   cg->stopUsingRegister(classReg);
+   cg->stopUsingRegister(targetReg);
+   cg->stopUsingRegister(firstDimLenReg);
+   cg->stopUsingRegister(secondDimLenReg);
+   cg->stopUsingRegister(targetReg);
+   cg->stopUsingRegister(temp1Reg);
+   cg->stopUsingRegister(temp2Reg);
+   cg->stopUsingRegister(temp3Reg);
+   cg->stopUsingRegister(componentClassReg);
+   cg->stopUsingRegister(vmThreadReg);
+
+   cg->decReferenceCount(node->getFirstChild());
+   cg->decReferenceCount(node->getSecondChild());
+   cg->decReferenceCount(node->getThirdChild());
+   }
+
+
 TR::Register *J9::Power::TreeEvaluator::multianewArrayEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   TR::ILOpCodes opCode = node->getOpCodeValue();
-   TR::Node::recreate(node, TR::acall);
-   TR::Register *targetRegister = directCallEvaluator(node, cg);
-   TR::Node::recreate(node, opCode);
-   return targetRegister;
+   TR::Compilation *comp = cg->comp();
+   TR_ASSERT_FATAL(comp->target().is64Bit(), "multianewArrayEvaluator is only supported on 64-bit JVMs!");
+
+   TR::Node *secondChild = node->getSecondChild();    // Number of dimensions - this is fixed in the bytecode, so compile time constant
+
+   // The number of dimensions should always be an iconst
+   TR_ASSERT_FATAL(secondChild->getOpCodeValue() == TR::iconst, "dims of multianewarray must be iconst");
+
+   // Only generate inline code if nDims > 1
+   uint32_t nDims = secondChild->get32bitIntegralValue();
+   if (nDims > 1)
+      {
+      return generateMultianewArrayWithInlineAllocators(node, cg);
+      }
+   else
+      {
+      if (comp->getOption(TR_TraceCG))
+         {
+         traceMsg(comp, "Disabling inline allocations for multianewarray of dim %d\n", nDims);
+         }
+      TR::ILOpCodes opCode = node->getOpCodeValue();
+      TR::Node::recreate(node, TR::acall);
+      TR::Register *targetRegister = TR::TreeEvaluator::performCall(node, false, cg);
+      TR::Node::recreate(node, opCode);
+      return targetRegister;
+      }
    }
 
 TR::Register *J9::Power::TreeEvaluator::arraylengthEvaluator(TR::Node *node, TR::CodeGenerator *cg)
