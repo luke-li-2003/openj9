@@ -1970,13 +1970,13 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    TR::LabelSymbol *oolJumpLabel = generateLabelSymbol(cg);
 
    startLabel->setStartInternalControlFlow();
-   doneLabel->setEndInternalControlFlow();
+   endLabel->setEndInternalControlFlow();
    generateLabelInstruction(cg, TR::InstOpCode::label, node, startLabel);
 
    // if the second dimension's length is not zero, we call the function to handle it
    TR_PPCOutOfLineCodeSection *outlinedHelperCall = new (cg->trHeapMemory())
-      TR_PPCOutOfLineCodeSection(node, TR::acall, targetReg, oolFailLabel, doneLabel, cg);
-   cg->getOutlinedInstructionsList().push_front(outlinedHelperCall);
+      TR_PPCOutOfLineCodeSection(node, TR::acall, targetReg, oolFailLabel, endLabel, cg);
+   cg->getPPCOutOfLineCodeSectionList().push_front(outlinedHelperCall);
 
    dimReg = cg->evaluate(secondChild);
    dimsPtrReg = cg->evaluate(firstChild);
@@ -1988,7 +1988,7 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    generateLabelInstruction(cg, TR::InstOpCode::label, node, endLabel);
 
    cg->stopUsingRegister(dimsPtrReg);
-   cg->stopUsingRegister(dimReg = cg);
+   cg->stopUsingRegister(dimReg);
    cg->stopUsingRegister(classReg);
    cg->stopUsingRegister(targetReg);
    cg->stopUsingRegister(firstDimLenReg);
@@ -2002,6 +2002,9 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    cg->decReferenceCount(node->getFirstChild());
    cg->decReferenceCount(node->getSecondChild());
    cg->decReferenceCount(node->getThirdChild());
+
+   node->setRegister(targetReg);
+   return targetReg
    }
 
 
