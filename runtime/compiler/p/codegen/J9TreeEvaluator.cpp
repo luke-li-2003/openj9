@@ -2018,7 +2018,7 @@ TR::Register *J9::Power::TreeEvaluator::multianewArrayEvaluator(TR::Node *node, 
 
    // Only generate inline code if nDims > 1
    uint32_t nDims = secondChild->get32bitIntegralValue();
-   if (nDims > 1)
+   if (nDims > 1 && !comp()->getOption(TR_DisableInterpreterProfiling))
       {
       return generateMultianewArrayWithInlineAllocators(node, cg);
       }
