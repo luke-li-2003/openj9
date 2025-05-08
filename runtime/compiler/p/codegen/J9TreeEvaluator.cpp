@@ -1978,6 +1978,8 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
       TR_PPCOutOfLineCodeSection(node, TR::acall, targetReg, oolFailLabel, endLabel, cg);
    cg->getPPCOutOfLineCodeSectionList().push_front(outlinedHelperCall);
 
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, oolFailLabel);
+
    generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, temp1Reg, temp1Reg, 777, 0xFFF);
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, loopLabel);
