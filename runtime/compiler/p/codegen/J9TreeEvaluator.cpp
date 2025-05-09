@@ -2039,11 +2039,13 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, nonZeroFirstDimLabel);
-   generateLabelInstruction(cg, TR::InstOpCode::b, node, oolFailLabel);
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, oolJumpLabel);
 
    // =============
    generateLabelInstruction(cg, TR::InstOpCode::label, node, loopLabel);
 
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, oolJumpLabel);
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, oolFailLabel);
    // end of the function
 
    TR::RegisterDependencyConditions *dependencies =
@@ -2063,7 +2065,6 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
 
    cg->stopUsingRegister(dimsPtrReg);
    cg->stopUsingRegister(classReg);
-   cg->stopUsingRegister(targetReg);
    cg->stopUsingRegister(firstDimLenReg);
    cg->stopUsingRegister(secondDimLenReg);
    cg->stopUsingRegister(temp1Reg);
@@ -2072,11 +2073,12 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    cg->stopUsingRegister(componentClassReg);
    cg->stopUsingRegister(condReg);
 
-   //cg->stopUsingRegister(vmThreadReg); // do we need this?
+   cg->stopUsingRegister(vmThreadReg); // do we need this?
 
-   cg->decReferenceCount(node->getFirstChild());
-   cg->decReferenceCount(node->getSecondChild());
-   cg->decReferenceCount(node->getThirdChild());
+   int a1 = cg->decReferenceCount(node->getFirstChild());
+   int a2 = cg->decReferenceCount(node->getSecondChild());
+   int a3 = cg->decReferenceCount(node->getThirdChild());
+   printf("DLLK %d %d %d\n", a1, a2, a3);
 
    node->setRegister(targetReg);
    return targetReg;
