@@ -1955,7 +1955,7 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    TR::Register *temp3Reg = cg->allocateRegister();
    TR::Register *componentClassReg = cg->allocateRegister();
 
-   TR::Register *vmThreadReg = cg->getMethodMetaDataRealRegister();
+   TR::Register *vmThreadReg = cg->getMethodMetaDataRegister();
    TR::Register *condReg = cg->allocateRegister(TR_CCR);
 
    TR::LabelSymbol *startLabel = generateLabelSymbol(cg);
@@ -1990,7 +1990,7 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, secondDimLenReg, 0);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, oolJumpLabel, condReg);
 
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, firstDimReg, 0);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, firstDimLenReg, 0);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, nonZeroFirstDimLabel, condReg);
 
    // if we reach here, both dimensions are zero, just allocate a zero-length object array
@@ -2095,7 +2095,7 @@ TR::Register *J9::Power::TreeEvaluator::multianewArrayEvaluator(TR::Node *node, 
 
    // Only generate inline code if nDims > 1
    uint32_t nDims = secondChild->get32bitIntegralValue();
-   if (nDims > 1 && comp()->getOption(TR_DisableInterpreterProfiling))
+   if (nDims > 1 && comp->getOption(TR_DisableInterpreterProfiling))
       {
       return generateMultianewArrayWithInlineAllocators(node, cg);
       }
