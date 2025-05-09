@@ -1941,7 +1941,7 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    // array construction stops at the outermost zero size
    TR::Register *dimsPtrReg = cg->evaluate(node->getFirstChild());
    // number of dimensions - compile time constant
-   TR::Register *dimReg = cg->evaluate(node->getSecondChild());
+   uint32_t nDims = node->getSecondChild()->get32bitIntegralValue();
    // class pointer of objects in the array
    TR::Register *classReg = cg->evaluate(node->getThirdChild());
 
@@ -1955,11 +1955,13 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    TR::Register *temp3Reg = cg->allocateRegister();
    TR::Register *componentClassReg = cg->allocateRegister();
 
-   TR::Register *vmThreadReg = cg->getVMThreadRegister();
+   TR::Register *vmThreadReg = cg->getMethodMetaDataRealRegister();
+   TR::Register *condReg = cg->allocateRegister(TR_CCR);
 
    TR::LabelSymbol *startLabel = generateLabelSymbol(cg);
-   TR::LabelSymbol *endLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *nonZeroFirstDimLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *loopLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *endLabel = generateLabelSymbol(cg);
 
    // out of line labels
    TR::LabelSymbol *oolFailLabel = generateLabelSymbol(cg);
@@ -1978,15 +1980,88 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
       TR_PPCOutOfLineCodeSection(node, TR::acall, targetReg, oolFailLabel, endLabel, cg);
    cg->getPPCOutOfLineCodeSectionList().push_front(outlinedHelperCall);
 
+   // load the dimensions
+   generateTrg1MemInstruction(cg, TR::InstOpCode::lwz, node, firstDimLenReg,
+      TR::MemoryReference::createWithDisplacement(cg, dimsPtrReg, 4, 4));
+   generateTrg1MemInstruction(cg, TR::InstOpCode::lwz, node, secondDimLenReg,
+      TR::MemoryReference::createWithDisplacement(cg, dimsPtrReg, 0, 4));
+
+   // jump away if the second dimension is not zero
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, secondDimLenReg, 0);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, oolJumpLabel, condReg);
+
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, firstDimReg, 0);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, nonZeroFirstDimLabel, condReg);
+
+   // if we reach here, both dimensions are zero, just allocate a zero-length object array
+   generateTrg1MemInstruction(cg, TR::InstOpCode::Op_load, node, targetReg,
+      TR::MemoryReference::createWithDisplacement(cg, vmThreadReg, offsetof(J9VMThread, heapAlloc),
+         TR::Compiler->om.sizeofReferenceAddress()));
+
+   // Take into account alignment requirements for the size of the zero-length array header
+   int32_t zeroArraySizeAligned = OMR::align(TR::Compiler->om.discontiguousArrayHeaderSizeInBytes(),
+                                             TR::Compiler->om.getObjectAlignmentInBytes());
+   // see if we will have a heap overflow, if so go back to the ool call
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, temp1Reg, targetReg,
+                                  zeroArraySizeAligned);
+   generateTrg1MemInstruction(cg, TR::InstOpCode::Op_load, node, temp2Reg,
+      TR::MemoryReference::createWithDisplacement(cg, vmThreadReg, offsetof(J9VMThread, heapTop),
+         TR::Compiler->om.sizeofReferenceAddress()));
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::Op_cmp, node, condReg, temp1Reg, temp2Reg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bgt, node, oolJumpLabel, condReg);
+
+   // update the next free space on the heap
+   generateMemSrc1Instruction(cg, TR::InstOpCode::Op_st, node,
+      TR::MemoryReference::createWithDisplacement(cg, vmThreadReg, offsetof(J9VMThread, heapAlloc),
+         TR::Compiler->om.sizeofReferenceAddress()),
+      temp1Reg);
+
+   // Init class
+   bool use64BitClasses =
+      comp->target().is64Bit() && !TR::Compiler->om.generateCompressedObjectHeaders();
+   generateMemSrc1Instruction(cg, use64BitClasses ? TR::InstOpCode::std : TR::InstOpCode::stw, node,
+      TR::MemoryReference::createWithDisplacement(cg, targetReg,
+         TR::Compiler->om.offsetOfObjectVftField(), use64BitClasses ? 8 : 4),
+      classReg);
+
+   generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, temp3Reg, 0);
+   // Init size and mustBeZero ('0') fields to 0
+   generateMemSrc1Instruction(cg, TR::InstOpCode::stw, node,
+      TR::MemoryReference::createWithDisplacement(cg, targetReg, 
+         fej9->getOffsetOfContiguousArraySizeField(), 4),
+      temp3Reg);
+   generateMemSrc1Instruction(cg, TR::InstOpCode::stw, node,
+      TR::MemoryReference::createWithDisplacement(cg, targetReg, 
+         fej9->getOffsetOfDiscontiguousArraySizeField(), 4),
+      temp3Reg);
+
+   // TODO: offheap
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, nonZeroFirstDimLabel);
    generateLabelInstruction(cg, TR::InstOpCode::b, node, oolFailLabel);
 
-   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, temp1Reg, temp1Reg, 777, 0xFFF);
-
+   // =============
    generateLabelInstruction(cg, TR::InstOpCode::label, node, loopLabel);
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, endLabel);
+
+   // end of the function
+
+   TR::RegisterDependencyConditions *dependencies =
+      new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0, 10, cg->trMemory());
+   dependencies->addPostCondition(dimsPtrReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(classReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(targetReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(firstDimLenReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(secondDimLenReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(temp1Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(temp2Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(temp3Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(componentClassReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(condReg, TR::RealRegister::NoReg);
+
+   generateDepLabelInstruction(cg, TR::InstOpCode::label, node, endLabel, dependencies);
 
    cg->stopUsingRegister(dimsPtrReg);
-   cg->stopUsingRegister(dimReg);
    cg->stopUsingRegister(classReg);
    cg->stopUsingRegister(targetReg);
    cg->stopUsingRegister(firstDimLenReg);
@@ -1995,7 +2070,9 @@ static TR::Register * generateMultianewArrayWithInlineAllocators(TR::Node *node,
    cg->stopUsingRegister(temp2Reg);
    cg->stopUsingRegister(temp3Reg);
    cg->stopUsingRegister(componentClassReg);
-   cg->stopUsingRegister(vmThreadReg);
+   cg->stopUsingRegister(condReg);
+
+   //cg->stopUsingRegister(vmThreadReg); // do we need this?
 
    cg->decReferenceCount(node->getFirstChild());
    cg->decReferenceCount(node->getSecondChild());
