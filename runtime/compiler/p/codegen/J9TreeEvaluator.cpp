@@ -12045,10 +12045,10 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives_P10(TR::Node
    generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvll, node, vtmp1Reg, startReg, tempReg);
    // bit 2 of cr6 (ZERO) will not be set if any comparison is true
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vcmpgtsb_r, node, vtmp1Reg, vconstant0Reg, vtmp1Reg);
-   // branch when the ZERO bit is not set
+   // branch if the ZERO bit is not set
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, matchLabel, cr6);
-
-   generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
+   // otherwise return a negative result
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, resultLabel);
 
    // --- when there is a match but we don't know the exact location yet
    generateLabelInstruction(cg, TR::InstOpCode::label, node, matchLabel);
