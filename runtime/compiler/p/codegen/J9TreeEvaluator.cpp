@@ -12041,6 +12041,7 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives_P10(TR::Node
    generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, startReg, startReg, indexReg);
    // number of items remaining
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, tempReg, indexReg, lengthReg);
+   generateShiftLeftImmediateLong(cg, node, tempReg, tempReg, 56);
 
    generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvll, node, vtmp1Reg, startReg, tempReg);
    // bit 2 of cr6 (ZERO) will not be set if any comparison is true
@@ -12721,14 +12722,20 @@ J9::Power::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
       case TR::java_lang_StringCoding_hasNegatives:
          if (cg->getSupportsInlineStringCodingHasNegatives())
             {
-            resultReg = inlineStringCodingHasNegativesOrCountPositives(node, cg, false);
+            if (comp->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P10))
+               resultReg = inlineStringCodingHasNegativesOrCountPositives_P10(node, cg, false);
+            else
+               resultReg = inlineStringCodingHasNegativesOrCountPositives(node, cg, false);
             return true;
             }
          break;
       case TR::java_lang_StringCoding_countPositives:
          if (cg->getSupportsInlineStringCodingCountPositives())
             {
-            resultReg = inlineStringCodingHasNegativesOrCountPositives(node, cg, true);
+            if (comp->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P10))
+               resultReg = inlineStringCodingHasNegativesOrCountPositives_P10(node, cg, true);
+            else
+               resultReg = inlineStringCodingHasNegativesOrCountPositives(node, cg, true);
             return true;
             }
          break;
