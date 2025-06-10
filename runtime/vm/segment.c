@@ -280,6 +280,7 @@ allocateMemoryForSegment(J9JavaVM *javaVM,J9MemorySegment *segment, J9PortVmemPa
 		/* MEMORY_TYPE_CODE and MEMORY_TYPE_VIRTUAL are allocated via the virtual memory functions.
 		 * Assert MEMORY_TYPE_VIRTUAL is used in combination with another bit, like MEMORY_TYPE_JIT_SCRATCH_SPACE.
 		 */
+		printf("LLK memory type code\n");
 		Assert_VM_true(J9_ARE_NO_BITS_SET(segment->type, MEMORY_TYPE_VIRTUAL) || J9_ARE_ANY_BITS_SET(segment->type, ~MEMORY_TYPE_VIRTUAL));
 
 		/* Memory segments can be marked as MEMORY_TYPE_DISCLAIMABLE_TO_FILE
@@ -295,6 +296,7 @@ allocateMemoryForSegment(J9JavaVM *javaVM,J9MemorySegment *segment, J9PortVmemPa
 
 		tmpAddr = j9vmem_reserve_memory_ex(&segment->vmemIdentifier, vmemParams);
 	} else if (J9_ARE_ALL_BITS_SET(segment->type, MEMORY_TYPE_FIXED_RAM_CLASS)) {
+		printf("LLK memory type fixed ram\n");
 		tmpAddr = j9vmem_reserve_memory_ex(&segment->vmemIdentifier, vmemParams);
 		Trc_VM_virtualRAMClassAlloc(tmpAddr);
 	} else if (J9_ARE_ALL_BITS_SET(segment->type, MEMORY_TYPE_RAM_CLASS)) {
@@ -308,6 +310,7 @@ allocateMemoryForSegment(J9JavaVM *javaVM,J9MemorySegment *segment, J9PortVmemPa
 		} else
 #endif /* defined(J9VM_OPT_SNAPSHOTS) */
 		{
+		printf("LLK memory type ram class\n");
 			if (J9JAVAVM_COMPRESS_OBJECT_REFERENCES(javaVM)) {
 				tmpAddr = j9mem_allocate_memory32(segment->size, memoryCategory);
 			} else {
@@ -316,18 +319,21 @@ allocateMemoryForSegment(J9JavaVM *javaVM,J9MemorySegment *segment, J9PortVmemPa
 		}
 #if defined(J9VM_OPT_SNAPSHOTS)
 	} else if (J9_ARE_ALL_BITS_SET(segment->type, MEMORY_TYPE_ROM_CLASS) && IS_SNAPSHOTTING_ENABLED(javaVM)) {
+		printf("LLK memory type rom class\n");
 		tmpAddr = vmsnapshot_allocate_memory(segment->size, memoryCategory);
 		/* TODO: Add Memory type for allocation inside the snapshot. (MEMORY_TYPE_IMAGE_ALLOCATED)
 		 * (See @ref omr:j9nongenerated.h).
 		 */
 #endif /* defined(J9VM_OPT_SNAPSHOTS) */
 	} else {
+		printf("LLK memory type other\n");
 		tmpAddr = j9mem_allocate_memory(segment->size, memoryCategory);
 	}
 
 	if (NULL != tmpAddr) {
 		segment->type = segment->type | MEMORY_TYPE_ALLOCATED;
 	}
+	printf("LLK leaving allocateMemoryForSegment\n");
 
 	return tmpAddr;
 }
@@ -513,6 +519,7 @@ static J9MemorySegment * allocateVirtualMemorySegmentInListInternal(J9JavaVM *ja
 
 	Trc_VM_allocateMemorySegmentInList_Exit(segment);
 
+	printf("LLK exiting internal\n");
 	return segment;
 }
 
