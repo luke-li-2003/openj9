@@ -442,12 +442,23 @@ J9::CodeCacheManager::allocateCodeCacheSegment(size_t segmentSize,
    mcc_printf("TR::CodeCache::allocate : mode = %x\n", mode);
    mcc_printf("TR::CodeCache::allocate : preferredStartAddress = %p\n", preferredStartAddress);
 
+   printf("LLK TR::CodeCache::allocate : requesting %d bytes\n", codeCacheSizeToAllocate);
+   printf("LLK TR::CodeCache::allocate : javaVM = %p\n", javaVM);
+   printf("LLK TR::CodeCache::allocate : codeCacheList = %p\n", jitConfig->codeCacheList);
+   printf("LLK TR::CodeCache::allocate : size = %p\n", codeCacheSizeToAllocate);
+   printf("LLK TR::CodeCache::allocate : largeCodePageSize = %d\n", largeCodePageSize);
+   printf("LLK TR::CodeCache::allocate : segmentType = %x\n", segmentType);
+   printf("LLK TR::CodeCache::allocate : mode = %x\n", mode);
+   printf("LLK TR::CodeCache::allocate : preferredStartAddress = %p\n", preferredStartAddress);
+
    J9MemorySegment *codeCacheSegment =
       javaVM->internalVMFunctions->allocateVirtualMemorySegmentInList(javaVM,
                                                                       jitConfig->codeCacheList,
                                                                       codeCacheSizeToAllocate,
                                                                       segmentType,
                                                                       &vmemParams);
+
+   printf("LLK finished allocation\n");
 
    if (!codeCacheSegment && preferredStartAddress)
       {
@@ -484,6 +495,7 @@ J9::CodeCacheManager::allocateCodeCacheSegment(size_t segmentSize,
    if (codeCacheSegment)
       {
       mcc_printf("TR::CodeCache::allocated : codeCacheSegment is %p\n",codeCacheSegment);
+      printf("LLK TR::CodeCache::allocated : codeCacheSegment is %p\n",codeCacheSegment);
       if (config.verboseCodeCache())
          {
          const char *verboseLogString = "The code cache repository was allocated between addresses %p and %p alignment=%zu largeCodePageSize=%zu";

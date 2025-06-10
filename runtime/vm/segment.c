@@ -451,6 +451,8 @@ static J9MemorySegment * allocateVirtualMemorySegmentInListInternal(J9JavaVM *ja
 	U_8 *allocatedBase;
 	J9MemorySegment *segment;
 
+	printf("LLK in internal\n");
+
 	Trc_VM_allocateMemorySegmentInList_Entry(segmentList, size, type);
 
 #if defined(J9VM_THR_PREEMPTIVE)
@@ -470,7 +472,9 @@ static J9MemorySegment * allocateVirtualMemorySegmentInListInternal(J9JavaVM *ja
 			vmemParams->byteAmount = segment->size;
 		}
 
+		printf("LLK calling allocateMemoryForSegment\n");
 		allocatedBase = (U_8 *) allocateMemoryForSegment(javaVM, segment, vmemParams, memoryCategory);
+		printf("LLK end of allocateMemoryForSegment\n");
 
 		if (NULL == allocatedBase) {
 			Trc_VM_allocateMemorySegmentInList_AllocFailed(segmentList, size, type);
