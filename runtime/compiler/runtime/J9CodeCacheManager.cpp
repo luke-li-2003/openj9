@@ -305,6 +305,7 @@ J9::CodeCacheManager::allocateCodeCacheSegment(size_t segmentSize,
    if (config.largeCodePageSize() > pageSizes[0])
       largeCodePageSize = config.largeCodePageSize();
 
+   printf("LLK0 attempting large page %d %ld\n", largeCodePageSize, vmemParams.pageSize);
 #if defined(TR_TARGET_POWER) && defined(TR_HOST_POWER)
    /* Use largeCodePageSize on PPC only if its 16M.
     If we pass in any pagesize other than the default page size, the port library picks the shared memory api to allocate which wastes memory */
