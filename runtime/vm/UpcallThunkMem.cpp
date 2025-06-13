@@ -201,6 +201,7 @@ allocateThunkHeap(J9UpcallMetaData *data)
 		 */
 		heapSize = OMR::align((size_t)thunkSize, (size_t)pageSize);
 	}
+	printf("LkL allocating thunk map ps %ld\n", pageSize);
 
 	/* Reserve a block of memory with the fixed page size for heap creation. */
 	allocMemPtr = j9vmem_reserve_memory(
