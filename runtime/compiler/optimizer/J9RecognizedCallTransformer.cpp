@@ -1911,7 +1911,8 @@ bool J9::RecognizedCallTransformer::isInlineable(TR::TreeTop* treetop)
          case TR::java_lang_StringLatin1_inflate_BIBII:
             return (cg()->getSupportsArrayTranslateTROTNoBreak() && !comp()->target().cpu.isPower());
          case TR::jdk_internal_util_ArraysSupport_vectorizedMismatch:
-            return cg()->getSupportsInlineVectorizedMismatch();
+            //return cg()->getSupportsInlineVectorizedMismatch();
+            return false;
          default:
             return false;
          }
