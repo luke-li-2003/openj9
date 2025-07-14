@@ -12252,13 +12252,15 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
    TR::Register *storeReg = cg->allocateRegister();
    TR::Register *maskReg = cg->allocateRegister();
 
-   TR::LabelSymbol *VSXLabel = generateLabelSymbol(cg);
-   TR::LabelSymbol *serialPrepLabel = generateLabelSymbol(cg);
-   TR::LabelSymbol *serialUnrollPrepLabel = generateLabelSymbol(cg);
-   TR::LabelSymbol *serialUnrollLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *serialCheckLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *serial1Label = generateLabelSymbol(cg);
    TR::LabelSymbol *serial2Label = generateLabelSymbol(cg);
    TR::LabelSymbol *serial3Label = generateLabelSymbol(cg);
+   TR::LabelSymbol *serialUnrollCheckLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *serialUnrollPrepLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *serialUnrollLoopLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *vectorLoopPrepLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *vectorLoopLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *matchLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *resultLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *endLabel = generateLabelSymbol(cg);
@@ -12289,59 +12291,15 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
    // make the index 0 since everything we need is relative to the offset
    generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, indexReg, 0);
 
-   // check the first byte
-   generateTrg1MemInstruction(cg, TR::InstOpCode::lbz, node, tempReg,
-      TR::MemoryReference::createWithIndexReg(cg, NULL, startReg, 1));
-   // check the negative bit
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, tempReg, tempReg, 0x80);
-   if (isCountPositives) // when counting positives, just return the index which is 0
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, endLabel, cr0);
-   else // when seeking negatives, we need to return 1
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, matchLabel, cr0);
-
-   // if we only have one byte end it here, and return 0 for hasNegative
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, indexReg, indexReg, 1);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6, indexReg, lengthReg);
-   if (isCountPositives)
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, endLabel, cr6);
-   else
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, resultLabel, cr6);
-
-   // ready the zero reg
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::vxor, node, vconstant0Reg, vconstant0Reg, vconstant0Reg);
-   // tempReg marks the end where we could use lxv
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, lengthReg, -15);
-
-   // --- start of VSXLoop
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, VSXLabel);
-   // go to residue if we don't have enough items to do one load
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6, indexReg, tempReg);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, serialPrepLabel, cr6);
-
-   // load 16 items; we don't need to worry about endianness since the order doesn't matter
-   if (p9Plus)
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvb16x, node, vtmp1Reg, startReg, indexReg);
-   else
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvw4x, node, vtmp1Reg, startReg, indexReg);
-   // bit 2 of cr6 (ZERO) will not be set if any comparison is true
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::vcmpgtsb_r, node, vtmp1Reg, vconstant0Reg, vtmp1Reg);
-   // branch when the ZERO bit is not set
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, matchLabel, cr6);
-
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, indexReg, indexReg, 16);
-   generateLabelInstruction(cg, TR::InstOpCode::b, node, VSXLabel);
-
-   // --- serialPrepLabel to deal with whatever remains
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, serialPrepLabel);
-
-   // do we have enough elements to use the unroll loop?
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, lengthReg, -3);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6, indexReg, tempReg);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, serialUnrollPrepLabel, cr6);
+   // --- go into serial for sizes smaller than 4
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, serialCheckLabel);
+   // see if we have enough items to use the unrolled loop
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, cr6, lengthReg, 4);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, serialUnrollCheckLabel, cr6);
 
    // --- special cases for very small sizes
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serial1Label);
-   if (!isCountPositives)
+   if (!isCountPositives) // preload 1 for hasNegatives
       generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, tempReg, 1);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, maskReg, indexReg, lengthReg);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, cr6, maskReg, 1);
@@ -12442,7 +12400,15 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
       generateLabelInstruction(cg, TR::InstOpCode::b, node, resultLabel);
       }
 
+   // --- unroll facility: size 4 - 15
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, serialUnrollCheckLabel);
+   // see if we have enough items to use the vector loop 
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, cr6, lengthReg, 16);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, vectorLoopPrepLabel, cr6);
+
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialUnrollPrepLabel);
+   // tempReg marks the end where we can use the unroll loop
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, lengthReg, -3);
    // we need to use 4 individual masks instead for countPositves() in LE before P9
    if (!(isLE && isCountPositives && !p9Plus))
       {
@@ -12515,15 +12481,48 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
    generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, serialUnrollLabel, cr6);
 
    // An inelegant solution to ensure a byte[4n+1] array can be parsed efficiently
-   // since the first byte is processed before any of the loops, the special cases
-   // have no provision to deal with 0.
+   // since the serial loop has no provision to deal with 0
    generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6, indexReg, lengthReg);
    if (isCountPositives)
       generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, endLabel, cr6);
    else
       generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, resultLabel, cr6);
-
    generateLabelInstruction(cg, TR::InstOpCode::b, node, serial1Label);
+
+   // --- vector facility: size 16 and up
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, vectorLoopPrepLabel);
+   // tempReg marks the end where we can use the vector loop
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, lengthReg, -15);
+   // ready the zero reg
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::vxor, node, vconstant0Reg, vconstant0Reg, vconstant0Reg);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, vectorLoopLabel);
+   // load 16 items; we don't need to worry about endianness since the order doesn't matter
+   if (p9Plus)
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvb16x, node, vtmp1Reg, startReg, indexReg);
+   else
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvw4x, node, vtmp1Reg, startReg, indexReg);
+   // bit 2 of cr6 (ZERO) will not be set if any comparison is true
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::vcmpgtsb_r, node, vtmp1Reg, vconstant0Reg, vtmp1Reg);
+   // branch when the ZERO bit is not set
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, matchLabel, cr6);
+
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, indexReg, indexReg, 16);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6, indexReg, tempReg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, vectorLoopLabel, cr6);
+
+   // go to residue if we don't have enough items to do one load
+   // We kinda have to tuck the code checking which residual loop to use here:
+   //    1. no item - end; 2. 1-3 items - serial; 3. 4-15 items - unrolled.
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6, indexReg, lengthReg);
+   if (isCountPositives)
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, endLabel, cr6);
+   else
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, resultLabel, cr6);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, tempReg, lengthReg, -3);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6, indexReg, tempReg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, serial1Label, cr6);
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, serialUnrollPrepLabel);
 
    // --- when there is a match but we don't know the exact location yet
    generateLabelInstruction(cg, TR::InstOpCode::label, node, matchLabel);
@@ -12537,7 +12536,7 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
          }
       else // otherwise, we use the serial loop to go through the items
          {
-         generateLabelInstruction(cg, TR::InstOpCode::b, node, serialPrepLabel);
+         generateLabelInstruction(cg, TR::InstOpCode::b, node, serialCheckLabel);
          }
       }
    else // just report 1
