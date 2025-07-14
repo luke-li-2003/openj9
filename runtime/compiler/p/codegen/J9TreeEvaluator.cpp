@@ -12419,7 +12419,7 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::ori, node, maskReg, maskReg, 0x8080);
       }
 
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, serialUnrollLabel);
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, serialUnrollLoopLabel);
    // loading 4 bytes at once is slightly faster
    generateTrg1MemInstruction(cg, TR::InstOpCode::lwzx, node, storeReg,
          TR::MemoryReference::createWithIndexReg(cg, startReg, indexReg, 4));
@@ -12478,7 +12478,7 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
       }
 
    generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6, indexReg, tempReg);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, serialUnrollLabel, cr6);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, serialUnrollLoopLabel, cr6);
 
    // An inelegant solution to ensure a byte[4n+1] array can be parsed efficiently
    // since the serial loop has no provision to deal with 0
@@ -12536,7 +12536,7 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
          }
       else // otherwise, we use the serial loop to go through the items
          {
-         generateLabelInstruction(cg, TR::InstOpCode::b, node, serialCheckLabel);
+         generateLabelInstruction(cg, TR::InstOpCode::b, node, serialUnrollPrepLabel);
          }
       }
    else // just report 1
