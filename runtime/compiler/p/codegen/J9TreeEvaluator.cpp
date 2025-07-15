@@ -12402,7 +12402,7 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
 
    // --- unroll facility: size 4 - 15
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serialUnrollCheckLabel);
-   // see if we have enough items to use the vector loop 
+   // see if we have enough items to use the vector loop
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, cr6, lengthReg, 16);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, vectorLoopPrepLabel, cr6);
 
