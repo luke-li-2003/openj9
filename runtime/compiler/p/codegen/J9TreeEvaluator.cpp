@@ -12301,6 +12301,7 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
    generateLabelInstruction(cg, TR::InstOpCode::label, node, serial1Label);
    if (!isCountPositives) // preload 1 for hasNegatives
       generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, tempReg, 1);
+   // maskReg = number of remaining items
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, maskReg, indexReg, lengthReg);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, cr6, maskReg, 1);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, serial2Label, cr6);
@@ -12343,7 +12344,12 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
          }
       else // in BE, count the leading zeroes
          {
-         TR_ASSERT_FATAL(false, "BE not supported yet\n");
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, storeReg, storeReg, 0x8080);
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::oris, node, storeReg, storeReg, 0xFFFF);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::cntlzw, node, storeReg, storeReg);
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, storeReg, storeReg, 3);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, indexReg, storeReg, indexReg);
+         generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
          }
       }
    else
@@ -12389,7 +12395,12 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
          }
       else // in BE, count the leading zeroes
          {
-         TR_ASSERT_FATAL(false, "BE not supported yet\n");
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, storeReg, storeReg, 0x8080);
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::oris, node, storeReg, storeReg, 0xFFFF);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::cntlzw, node, storeReg, storeReg);
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, storeReg, storeReg, 3);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, indexReg, storeReg, indexReg);
+         generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
          }
       }
    else
