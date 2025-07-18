@@ -12252,7 +12252,6 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
    TR::Register *storeReg = cg->allocateRegister();
    TR::Register *maskReg = cg->allocateRegister();
 
-   TR::LabelSymbol *serialCheckLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *serial1Label = generateLabelSymbol(cg);
    TR::LabelSymbol *serial2Label = generateLabelSymbol(cg);
    TR::LabelSymbol *serial3Label = generateLabelSymbol(cg);
@@ -12292,7 +12291,6 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
    generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, indexReg, 0);
 
    // --- go into serial for sizes smaller than 4
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, serialCheckLabel);
    // see if we have enough items to use the unrolled loop
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, cr6, lengthReg, 4);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, serialUnrollCheckLabel, cr6);
