@@ -12345,9 +12345,10 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
       else // in BE, count the leading zeroes
          {
          generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, storeReg, storeReg, 0x8080);
-         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::oris, node, storeReg, storeReg, 0xFFFF);
          generateTrg1Src1Instruction(cg, TR::InstOpCode::cntlzw, node, storeReg, storeReg);
          generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, storeReg, storeReg, 3);
+         // ignore the first two bytes in the word
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, storeReg, storeReg, -2);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, indexReg, storeReg, indexReg);
          generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
          }
@@ -12396,9 +12397,10 @@ static TR::Register *inlineStringCodingHasNegativesOrCountPositives(TR::Node *no
       else // in BE, count the leading zeroes
          {
          generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, storeReg, storeReg, 0x8080);
-         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::oris, node, storeReg, storeReg, 0xFFFF);
          generateTrg1Src1Instruction(cg, TR::InstOpCode::cntlzw, node, storeReg, storeReg);
          generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, storeReg, storeReg, 3);
+         // ignore the first two bytes in the word
+         generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, storeReg, storeReg, -2);
          generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, indexReg, storeReg, indexReg);
          generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
          }
